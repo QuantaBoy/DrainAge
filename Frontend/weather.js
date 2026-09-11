@@ -1,15 +1,23 @@
-document.getElementById("weather-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const city = document.getElementById("city").value.trim();
+// Determine base URL dynamically
+const getBaseUrl = () => window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:5000";
+
+// Initialize Leaflet GIS World Map centered at world view [20, 0]
+const map = L.map('map').setView([20, 0], 2);
+
+// Add OpenStreetMap GIS base tile layer
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let currentMarker = null;
+
+// Function to fetch weather by query string (city name or lat/lon)
+async function fetchWeather(queryParams) {
     const resultElement = document.getElementById("result");
-
-    if (!city) return;
-
     resultElement.textContent = "Loading weather data...";
 
-    // Use relative endpoint when served via HTTP (Flask), fallback to http://127.0.0.1:5000 if opened as file
-    const baseUrl = window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:5000";
-    const url = `${baseUrl}/data-collection/weather?city=${encodeURIComponent(city)}`;
+    const url = `${getBaseUrl()}/data-collection/weather?${queryParams}`;
 
     try {
         const res = await fetch(url);
@@ -21,9 +29,9 @@ document.getElementById("weather-form").addEventListener("submit", async (e) => 
             return;
         }
 
-        // Format clean text output
         const textOutput = [
-            `City: ${data.name}${data.sys?.country ? ', ' + data.sys.country : ''}`,
+            `City: ${data.name || 'Location'}${data.sys?.country ? ', ' + data.sys.country : ''}`,
+            `Coordinates: Lat ${data.coord?.lat}, Lon ${data.coord?.lon}`,
             `Temperature: ${data.main?.temp}°C (Feels like: ${data.main?.feels_like}°C)`,
             `Condition: ${data.weather?.[0]?.main || ''} - ${data.weather?.[0]?.description || ''}`,
             `Humidity: ${data.main?.humidity}%`,
@@ -33,8 +41,40 @@ document.getElementById("weather-form").addEventListener("submit", async (e) => 
 
         resultElement.textContent = textOutput;
 
+        // Update GIS World Map marker and view
+        if (data.coord && data.coord.lat !== undefined && data.coord.lon !== undefined) {
+            const lat = data.coord.lat;
+            const lon = data.coord.lon;
+
+            map.setView([lat, lon], 8);
+
+            if (currentMarker) {
+                map.removeLayer(currentMarker);
+            }
+
+            const popupContent = `<b>${data.name || 'Selected Location'}</b><br>${data.main?.temp}°C - ${data.weather?.[0]?.description}`;
+            currentMarker = L.marker([lat, lon]).addTo(map).bindPopup(popupContent).openPopup();
+        }
+
     } catch (err) {
-        resultElement.textContent = `Network / Connection Error: Ensure backend server is running at http://127.0.0.1:8000\nDetails: ${err.message}`;
+        resultElement.textContent = `Network Error: Ensure backend server is running.\nDetails: ${err.message}`;
+    }
+}
+
+// Form submit event (Search by City)
+document.getElementById("weather-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const city = document.getElementById("city").value.trim();
+    if (city) {
+        fetchWeather(`city=${encodeURIComponent(city)}`);
     }
 });
+
+// Click anywhere on World Map event (Fetch Weather by Coordinates)
+map.on('click', (e) => {
+    const lat = e.latlng.lat.toFixed(4);
+    const lon = e.latlng.lng.toFixed(4);
+    fetchWeather(`lat=${lat}&lon=${lon}`);
+});
+
 

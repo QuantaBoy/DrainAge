@@ -3,15 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weather</title>
+    <title>Weather & GIS World Map</title>
+    <!-- Leaflet.js GIS Mapping Library CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #map { height: 450px; width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid #ccc; }
+        #result { background: #f4f4f4; padding: 12px; border-radius: 6px; margin-top: 15px; }
+    </style>
 </head>
 <body>
+    <h2>Weather Data & GIS Interactive Map</h2>
     <form id="weather-form">
         <input id="city" type="text" placeholder="Enter city" required>
         <button type="submit">Get Weather</button>
     </form>
+    
     <pre id="result"></pre>
 
+    <h3>World Map (Click anywhere to inspect weather)</h3>
+    <div id="map"></div>
+
+    <!-- Leaflet.js GIS Mapping Library Script -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="weather.js"></script>
 </body>
 </html>
