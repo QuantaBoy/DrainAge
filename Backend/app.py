@@ -20,18 +20,24 @@ def index():
 @app.route("/data-collection/weather")
 def get_weather():
     city = request.args.get("city")
-    if not city:
-        return jsonify({"detail": "City parameter is required"}), 400
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
 
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
         return jsonify({"detail": "API key not configured"}), 500
 
+    params = {"appid": api_key, "units": "metric"}
+    if city:
+        params["q"] = city
+    elif lat and lon:
+        params["lat"] = lat
+        params["lon"] = lon
+    else:
+        return jsonify({"detail": "City or lat/lon parameters are required"}), 400
+
     try:
-        response = httpx.get(
-            "https://api.openweathermap.org/data/2.5/weather",
-            params={"q": city, "appid": api_key, "units": "metric"}
-        )
+        response = httpx.get("https://api.openweathermap.org/data/2.5/weather", params=params)
         if response.status_code != 200:
             return jsonify(response.json()), response.status_code
         return jsonify(response.json())
