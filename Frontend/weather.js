@@ -78,6 +78,39 @@ map.on('click', (e) => {
     fetchWeather(`lat=${lat}&lon=${lon}`);
 });
 
+// Live Location: use browser geolocation to center weather + rainfall grid on the user
+document.getElementById("use-location").addEventListener("click", () => {
+    const statusEl = document.getElementById("location-status");
+
+    if (!navigator.geolocation) {
+        statusEl.textContent = "Geolocation not supported by this browser.";
+        return;
+    }
+
+    statusEl.textContent = "Locating...";
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            statusEl.textContent = `Located: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+            fetchWeather(`lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`);
+
+            // Auto-fill and trigger the rainfall grid over a ~0.2deg box around the user
+            const pad = 0.1;
+            document.getElementById("min_lat").value = (lat - pad).toFixed(4);
+            document.getElementById("max_lat").value = (lat + pad).toFixed(4);
+            document.getElementById("min_lon").value = (lon - pad).toFixed(4);
+            document.getElementById("max_lon").value = (lon + pad).toFixed(4);
+            document.getElementById("rainfall-form").requestSubmit();
+        },
+        (err) => {
+            statusEl.textContent = `Location error: ${err.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+});
+
 // Rainfall Form Submit (Flood Nowcast Grid)
 document.getElementById("rainfall-form").addEventListener("submit", async (e) => {
     e.preventDefault();
