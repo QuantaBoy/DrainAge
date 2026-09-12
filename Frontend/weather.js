@@ -55,6 +55,16 @@ async function fetchWeather(queryParams) {
 
             const popupContent = `<b>${data.name || 'Selected Location'}</b><br>${data.main?.temp}°C - ${data.weather?.[0]?.description}`;
             currentMarker = L.marker([lat, lon]).addTo(map).bindPopup(popupContent).openPopup();
+
+            // Auto-fill the Flood Nowcast bounding box based on the fetched location
+            const pad = 0.1;
+            document.getElementById("min_lat").value = (lat - pad).toFixed(4);
+            document.getElementById("max_lat").value = (lat + pad).toFixed(4);
+            document.getElementById("min_lon").value = (lon - pad).toFixed(4);
+            document.getElementById("max_lon").value = (lon + pad).toFixed(4);
+            
+            // Automatically trigger the flood nowcast grid fetch!
+            document.getElementById("rainfall-form").requestSubmit();
         }
 
     } catch (err) {
@@ -111,6 +121,12 @@ document.getElementById("use-location").addEventListener("click", () => {
     );
 });
 
+// Show/hide the time period dropdown when a date is selected
+document.getElementById("historical_date").addEventListener("change", (e) => {
+    const hourSelect = document.getElementById("historical_hour");
+    hourSelect.style.display = e.target.value ? "inline-block" : "none";
+});
+
 // Rainfall Form Submit (Flood Nowcast Grid)
 document.getElementById("rainfall-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -118,11 +134,21 @@ document.getElementById("rainfall-form").addEventListener("submit", async (e) =>
     const max_lat = document.getElementById("max_lat").value;
     const min_lon = document.getElementById("min_lon").value;
     const max_lon = document.getElementById("max_lon").value;
+    const histDate = document.getElementById("historical_date").value;
+    const histHour = document.getElementById("historical_hour").value;
     
     const resultElement = document.getElementById("rainfall-result");
-    resultElement.textContent = "Loading 3-hour rainfall runoff grid...";
+    resultElement.textContent = histDate 
+        ? `Loading ${histHour === 'auto' ? 'Peak' : histHour + ':00'} 3-Hour Storm for ${histDate}...` 
+        : "Loading live 3-hour rainfall runoff grid...";
 
-    const url = `${getBaseUrl()}/data-collection/rainfall/latest?min_lat=${min_lat}&max_lat=${max_lat}&min_lon=${min_lon}&max_lon=${max_lon}`;
+    let url = `${getBaseUrl()}/data-collection/rainfall/latest?min_lat=${min_lat}&max_lat=${max_lat}&min_lon=${min_lon}&max_lon=${max_lon}`;
+    if (histDate) {
+        url += `&date=${histDate}`;
+        if (histHour !== "auto") {
+            url += `&start_hour=${histHour}`;
+        }
+    }
     
     try {
         const res = await fetch(url);
@@ -133,39 +159,35 @@ document.getElementById("rainfall-form").addEventListener("submit", async (e) =>
             return;
         }
         
-        let totalCityVolume = 0;
+        // Store grid data globally for the timeline slider
+        lastGridData = data;
         rainfallLayer.clearLayers();
 
-        // Draw grid boxes on map
-        data.grid.forEach(cell => {
-            // Sum all precip in the 3 hour window for this cell to get logical intensity
-            const cellTotalPrecipMm = cell.precipitation_mm.reduce((a, b) => a + b, 0);
-            
-            // Sum all volumes in the 3 hour window for this cell for reporting
-            const cellTotalVol = cell.runoff_volume_m3.reduce((a, b) => a + b, 0);
-            totalCityVolume += cellTotalVol;
-            
-            // Logically define rain severity based on depth (mm), NOT absolute volume.
-            // This makes the color coding mathematically sound regardless of grid box size!
-            // IMD 3-Hour thresholds (approx): >20mm = Severe/Red, >5mm = Moderate/Orange
-            const color = cellTotalPrecipMm >= 20.0 ? "red" : (cellTotalPrecipMm >= 5.0 ? "orange" : "blue");
+        const maxSteps = data.grid[0]?.timestamps?.length || 1;
+        const slider = document.getElementById("timeline-slider");
+        slider.max = maxSteps - 1;
+        slider.value = 0;
+        document.getElementById("timeline-container").style.display = "block";
 
-            
-            const step = data.step_deg;
-            const bounds = [[cell.lat, cell.lon], [cell.lat + step, cell.lon + step]];
-            L.rectangle(bounds, {color: color, weight: 1, fillOpacity: 0.3})
-             .bindPopup(`<b>Grid: ${cell.lat}, ${cell.lon}</b><br>Window: ${cell.timestamps[0]} to ${cell.timestamps[cell.timestamps.length - 1]}<br>Total 3hr Runoff: <b>${cellTotalVol.toFixed(2)} m³</b>`)
-             .addTo(rainfallLayer);
+        // Draw the initial frame (step 0) and the summary
+        renderTimeStep(0);
+
+        let totalCityVolume = 0;
+        data.grid.forEach(cell => {
+            totalCityVolume += cell.runoff_volume_m3.reduce((a, b) => a + b, 0);
         });
         
         const rows = data.grid.map(cell => {
-            const maxPrecip = Math.max(...cell.precipitation_mm);
+            const maxPrecip = cell.precipitation_mm.length > 0 ? Math.max(...cell.precipitation_mm) : 0;
             const vol = cell.runoff_volume_m3.reduce((a, b) => a + b, 0);
             return `${cell.lat},${cell.lon}\tpeak ${maxPrecip.toFixed(1)}mm\tvol ${vol.toFixed(0)}m³`;
         }).join('\n');
 
         const forecastTimes = data.grid[0]?.timestamps || [];
-        resultElement.textContent = `Success! Fetched ${data.grid.length} grid cells at ${data.step_deg}° (~${Math.round(data.step_deg * 111)}km) resolution.\nForecast window: ${forecastTimes[0]} to ${forecastTimes[forecastTimes.length - 1]}\nTotal predicted runoff volume in next 3 hrs: ${totalCityVolume.toFixed(2)} cubic meters.\n\nPer-cell variation (lat,lon | peak 15min precip | total 3hr runoff):\n${rows}`;
+        const timeStart = forecastTimes[0] || "N/A";
+        const timeEnd = forecastTimes[forecastTimes.length - 1] || "N/A";
+        const modeLabel = histDate ? `Peak 3-Hour Storm on ${histDate}` : "next 3 hrs";
+        resultElement.textContent = `Success! Fetched ${data.grid.length} grid cells at ${data.step_deg}° (~${Math.round(data.step_deg * 111)}km) resolution.\nForecast window: ${timeStart} to ${timeEnd}\nTotal predicted runoff volume in ${modeLabel}: ${totalCityVolume.toFixed(2)} cubic meters.\n\nPer-cell variation (lat,lon | peak 15min precip | total 3hr runoff):\n${rows}`;
         
         // Center map to the middle of the bounding box
         const centerLat = (parseFloat(min_lat) + parseFloat(max_lat)) / 2;
@@ -177,4 +199,71 @@ document.getElementById("rainfall-form").addEventListener("submit", async (e) =>
     }
 });
 
+// ============================================================
+// TIMELINE SLIDER: Animate the storm step-by-step (15 min each)
+// ============================================================
+let lastGridData = null;
+let timelineInterval = null;
+
+function renderTimeStep(stepIdx) {
+    if (!lastGridData) return;
+    rainfallLayer.clearLayers();
+    const step = lastGridData.step_deg;
+    let totalPrecipAtStep = 0;
+
+    lastGridData.grid.forEach(cell => {
+        const p = (cell.precipitation_mm[stepIdx] ?? 0);
+        totalPrecipAtStep += p;
+        
+        // Single-step color: use per-15-min thresholds (scaled down from 3hr)
+        // IMD: >2mm/15min = severe, >0.5mm/15min = moderate
+        const color = p >= 2.0 ? "red" : (p >= 0.5 ? "orange" : "blue");
+
+        const bounds = [[cell.lat, cell.lon], [cell.lat + step, cell.lon + step]];
+        L.rectangle(bounds, {color: color, weight: 1, fillOpacity: 0.35})
+         .bindPopup(`<b>Grid: ${cell.lat}, ${cell.lon}</b><br>Time: ${cell.timestamps[stepIdx] || 'N/A'}<br>Precip: <b>${p.toFixed(2)} mm</b><br>Runoff: <b>${(cell.runoff_volume_m3[stepIdx] ?? 0).toFixed(0)} m³</b>`)
+         .addTo(rainfallLayer);
+    });
+
+    // Update slider labels
+    const ts = lastGridData.grid[0]?.timestamps[stepIdx] || "N/A";
+    const minutes = stepIdx * 15;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    document.getElementById("timeline-label").textContent = `${ts}  (T+${h}h${m.toString().padStart(2,'0')}m)`;
+    
+    const avgPrecip = lastGridData.grid.length > 0 ? (totalPrecipAtStep / lastGridData.grid.length) : 0;
+    document.getElementById("timeline-precip").textContent = `Avg: ${avgPrecip.toFixed(2)} mm | Grid Total: ${totalPrecipAtStep.toFixed(2)} mm`;
+}
+
+// Slider drag event
+document.getElementById("timeline-slider").addEventListener("input", (e) => {
+    renderTimeStep(parseInt(e.target.value));
+});
+
+// Play / Pause button
+document.getElementById("timeline-play").addEventListener("click", () => {
+    const btn = document.getElementById("timeline-play");
+    const slider = document.getElementById("timeline-slider");
+    
+    if (timelineInterval) {
+        // Pause
+        clearInterval(timelineInterval);
+        timelineInterval = null;
+        btn.textContent = "▶ Play";
+    } else {
+        // Play: animate from current position
+        btn.textContent = "⏸ Pause";
+        timelineInterval = setInterval(() => {
+            let val = parseInt(slider.value);
+            if (val >= parseInt(slider.max)) {
+                val = 0; // Loop back to start
+            } else {
+                val++;
+            }
+            slider.value = val;
+            renderTimeStep(val);
+        }, 700); // 700ms per frame = ~8.4 seconds for full 3-hour animation
+    }
+});
 

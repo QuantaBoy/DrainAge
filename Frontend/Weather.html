@@ -24,8 +24,24 @@
     <pre id="result"></pre>
     
     <hr>
-    <h3>Flood Nowcast (3-Hour Runoff Volume Grid)</h3>
+    <h3>Flood Nowcast & Historical Replay (3-Hour Grid)</h3>
     <form id="rainfall-form">
+        <div style="margin-bottom: 10px;">
+            <label for="historical_date"><strong>Time Machine:</strong></label>
+            <input id="historical_date" type="date" title="Leave blank for Live Nowcast">
+            <select id="historical_hour" style="display: none; padding: 4px;" title="Pick the 3-hour window to analyze">
+                <option value="auto">🔍 Auto-detect Peak Storm</option>
+                <option value="0">00:00 – 03:00</option>
+                <option value="3">03:00 – 06:00</option>
+                <option value="6">06:00 – 09:00</option>
+                <option value="9">09:00 – 12:00</option>
+                <option value="12">12:00 – 15:00</option>
+                <option value="15">15:00 – 18:00</option>
+                <option value="18">18:00 – 21:00</option>
+                <option value="21">21:00 – 00:00</option>
+            </select>
+            <span style="font-size: 0.85em; color: #555;">(Select a past date, or leave blank for live nowcast)</span>
+        </div>
         <input id="min_lat" type="number" step="any" placeholder="Min Lat (e.g. 12.85)" required>
         <input id="max_lat" type="number" step="any" placeholder="Max Lat (e.g. 13.23)" required>
         <input id="min_lon" type="number" step="any" placeholder="Min Lon (e.g. 80.14)" required>
@@ -33,6 +49,23 @@
         <button type="submit">Calculate Runoff Volume</button>
     </form>
     <pre id="rainfall-result" style="background: #eef; padding: 12px; border-radius: 6px; margin-top: 15px;"></pre>
+    
+    <!-- Timeline Slider -->
+    <div id="timeline-container" style="display: none; background: #1a1a2e; color: #fff; padding: 15px 20px; border-radius: 8px; margin-top: 15px;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+            <button id="timeline-play" style="background: #0f3460; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 1em;">▶ Play</button>
+            <strong id="timeline-label" style="font-size: 1.1em;">T+0:00</strong>
+            <span id="timeline-precip" style="margin-left: auto; font-size: 0.95em; color: #e0e0e0;">0.0 mm</span>
+        </div>
+        <input id="timeline-slider" type="range" min="0" max="11" value="0" step="1" style="width: 100%; accent-color: #e94560;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: #aaa;">
+            <span>Now</span>
+            <span>+45min</span>
+            <span>+1h30</span>
+            <span>+2h15</span>
+            <span>+3h00</span>
+        </div>
+    </div>
     <hr>
 
     <h3>World Map (Click anywhere to inspect weather)</h3>
