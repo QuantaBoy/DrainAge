@@ -20,6 +20,18 @@
     </form>
     
     <pre id="result"></pre>
+    
+    <hr>
+    <h3>Flood Nowcast (3-Hour Runoff Volume Grid)</h3>
+    <form id="rainfall-form">
+        <input id="min_lat" type="number" step="any" placeholder="Min Lat (e.g. 12.85)" required>
+        <input id="max_lat" type="number" step="any" placeholder="Max Lat (e.g. 13.23)" required>
+        <input id="min_lon" type="number" step="any" placeholder="Min Lon (e.g. 80.14)" required>
+        <input id="max_lon" type="number" step="any" placeholder="Max Lon (e.g. 80.33)" required>
+        <button type="submit">Calculate Runoff Volume</button>
+    </form>
+    <pre id="rainfall-result" style="background: #eef; padding: 12px; border-radius: 6px; margin-top: 15px;"></pre>
+    <hr>
 
     <h3>World Map (Click anywhere to inspect weather)</h3>
     <div id="map"></div>

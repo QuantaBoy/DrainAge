@@ -10,9 +10,11 @@ class FloodNowcastMap {
         TILE_LAYER_URL: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         TILE_ATTRIBUTION: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         ENDPOINTS: {
-            RAINFALL: "/api/rainfall/latest",
+            RAINFALL: "/data-collection/rainfall/latest",
             FLOOD_PREDICTION: "/api/flood/predict",
         },
+        // Bounding box around DEFAULT_CENTER for rainfall grid fetch
+        BBOX: { min_lat: 13.05, max_lat: 13.10, min_lon: 80.25, max_lon: 80.30 },
     };
 
     constructor(containerId = "map") {
@@ -62,13 +64,14 @@ class FloodNowcastMap {
         try {
             this.rainfallLayer.clearLayers();
 
-            // Mock Data (Replace with API fetch call when backend route /api/rainfall/latest is ready)
-            const points = [
-                { lat: 13.09, lon: 80.27, mm: 12 },
-                { lat: 13.07, lon: 80.28, mm: 28 },
-            ];
+            const { min_lat, max_lat, min_lon, max_lon } = FloodNowcastMap.CONFIG.BBOX;
+            const url = `${FloodNowcastMap.CONFIG.ENDPOINTS.RAINFALL}?min_lat=${min_lat}&max_lat=${max_lat}&min_lon=${min_lon}&max_lon=${max_lon}`;
+            const res = await fetch(url);
+            const data = await res.json();
 
-            points.forEach(({ lat, lon, mm }) => {
+            (data.grid || []).forEach(({ lat, lon, precipitation_mm }) => {
+                const mm = precipitation_mm?.[0] ?? 0; // next 15-min slot
+                if (mm <= 0) return;
                 L.circle([lat, lon], {
                     radius: 300,
                     color: "#0066cc",
@@ -76,7 +79,7 @@ class FloodNowcastMap {
                     fillOpacity: 0.35,
                     weight: 2,
                 })
-                    .bindPopup(`<strong>Rainfall Monitor</strong><br/>Intensity: <strong>${mm} mm/hr</strong>`)
+                    .bindPopup(`<strong>Rainfall</strong><br/>Next 15min: <strong>${mm} mm</strong>`)
                     .addTo(this.rainfallLayer);
             });
         } catch (error) {

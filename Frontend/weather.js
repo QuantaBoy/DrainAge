@@ -1,5 +1,5 @@
 // Determine base URL dynamically
-const getBaseUrl = () => window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:5000";
+const getBaseUrl = () => window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000";
 
 // Initialize Leaflet GIS World Map centered at world view [20, 0]
 const map = L.map('map').setView([20, 0], 2);
@@ -11,6 +11,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let currentMarker = null;
+const rainfallLayer = L.layerGroup().addTo(map);
 
 // Function to fetch weather by query string (city name or lat/lon)
 async function fetchWeather(queryParams) {
@@ -75,6 +76,72 @@ map.on('click', (e) => {
     const lat = e.latlng.lat.toFixed(4);
     const lon = e.latlng.lng.toFixed(4);
     fetchWeather(`lat=${lat}&lon=${lon}`);
+});
+
+// Rainfall Form Submit (Flood Nowcast Grid)
+document.getElementById("rainfall-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const min_lat = document.getElementById("min_lat").value;
+    const max_lat = document.getElementById("max_lat").value;
+    const min_lon = document.getElementById("min_lon").value;
+    const max_lon = document.getElementById("max_lon").value;
+    
+    const resultElement = document.getElementById("rainfall-result");
+    resultElement.textContent = "Loading 3-hour rainfall runoff grid...";
+
+    const url = `${getBaseUrl()}/data-collection/rainfall/latest?min_lat=${min_lat}&max_lat=${max_lat}&min_lon=${min_lon}&max_lon=${max_lon}`;
+    
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (!res.ok) {
+            resultElement.textContent = `Error: ${data.detail || res.statusText}`;
+            return;
+        }
+        
+        let totalCityVolume = 0;
+        rainfallLayer.clearLayers();
+
+        // Draw grid boxes on map
+        data.grid.forEach(cell => {
+            // Sum all precip in the 3 hour window for this cell to get logical intensity
+            const cellTotalPrecipMm = cell.precipitation_mm.reduce((a, b) => a + b, 0);
+            
+            // Sum all volumes in the 3 hour window for this cell for reporting
+            const cellTotalVol = cell.runoff_volume_m3.reduce((a, b) => a + b, 0);
+            totalCityVolume += cellTotalVol;
+            
+            // Logically define rain severity based on depth (mm), NOT absolute volume.
+            // This makes the color coding mathematically sound regardless of grid box size!
+            // IMD 3-Hour thresholds (approx): >20mm = Severe/Red, >5mm = Moderate/Orange
+            const color = cellTotalPrecipMm >= 20.0 ? "red" : (cellTotalPrecipMm >= 5.0 ? "orange" : "blue");
+
+            
+            const step = data.step_deg;
+            const bounds = [[cell.lat, cell.lon], [cell.lat + step, cell.lon + step]];
+            L.rectangle(bounds, {color: color, weight: 1, fillOpacity: 0.3})
+             .bindPopup(`<b>Grid: ${cell.lat}, ${cell.lon}</b><br>Window: ${cell.timestamps[0]} to ${cell.timestamps[cell.timestamps.length - 1]}<br>Total 3hr Runoff: <b>${cellTotalVol.toFixed(2)} m³</b>`)
+             .addTo(rainfallLayer);
+        });
+        
+        const rows = data.grid.map(cell => {
+            const maxPrecip = Math.max(...cell.precipitation_mm);
+            const vol = cell.runoff_volume_m3.reduce((a, b) => a + b, 0);
+            return `${cell.lat},${cell.lon}\tpeak ${maxPrecip.toFixed(1)}mm\tvol ${vol.toFixed(0)}m³`;
+        }).join('\n');
+
+        const forecastTimes = data.grid[0]?.timestamps || [];
+        resultElement.textContent = `Success! Fetched ${data.grid.length} grid cells at ${data.step_deg}° (~${Math.round(data.step_deg * 111)}km) resolution.\nForecast window: ${forecastTimes[0]} to ${forecastTimes[forecastTimes.length - 1]}\nTotal predicted runoff volume in next 3 hrs: ${totalCityVolume.toFixed(2)} cubic meters.\n\nPer-cell variation (lat,lon | peak 15min precip | total 3hr runoff):\n${rows}`;
+        
+        // Center map to the middle of the bounding box
+        const centerLat = (parseFloat(min_lat) + parseFloat(max_lat)) / 2;
+        const centerLon = (parseFloat(min_lon) + parseFloat(max_lon)) / 2;
+        map.setView([centerLat, centerLon], 11);
+        
+    } catch (err) {
+        resultElement.textContent = `Network Error: ${err.message}`;
+    }
 });
 
 

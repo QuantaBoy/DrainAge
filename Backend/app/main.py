@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from app.routes import weather
+from app.routes import rainfall, weather
 
 # Load environment configuration
 ENV_FILE = BASE_DIR / ".env"
@@ -44,6 +44,7 @@ def create_application() -> FastAPI:
 
     # 2. Register API Routers
     app_instance.include_router(weather.router)
+    app_instance.include_router(rainfall.router)
 
     # 3. Mount Static Assets & Serve Web Frontend Pages
     if FRONTEND_DIR.exists():
