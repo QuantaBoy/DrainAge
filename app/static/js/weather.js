@@ -74,7 +74,84 @@ async function renderForecast(query, title) {
     const where = title || [body.district, body.state].filter(Boolean).join(", ");
     const heading = document.createElement("strong");
     heading.textContent = where ? `Rainfall forecast, ${where}` : "Rainfall forecast";
-    forecastBox.replaceChildren(heading, buildTimeline(body), buildWeekTable(body.days));
+    forecastBox.replaceChildren(
+        heading,
+        buildNextRain(body.next_rain, body.heaviest_24h, body.days.length),
+        buildTimeline(body),
+        buildWeekTable(body.days),
+    );
+    loadRainGrid(body.lat, body.lon);
+}
+
+// Standard rain-rate bands, in mm/h.
+function describeIntensity(mmPerHour) {
+    if (mmPerHour < 2.5) return "Light rain";
+    if (mmPerHour < 7.6) return "Moderate rain";
+    if (mmPerHour < 50) return "Heavy rain";
+    return "Violent rain";
+}
+
+function describeLikelihood(chancePct) {
+    if (chancePct >= 70) return "expected";
+    if (chancePct >= 40) return "likely";
+    return "possible";
+}
+
+function formatHour(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function formatDayHour(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+    });
+}
+
+// When the next rain starts and stops, how heavy, and how sure the forecast is.
+function buildNextRain(next, heaviest, dayCount) {
+    const box = document.createElement("div");
+    box.className = "next-rain";
+    const headline = document.createElement("div");
+    headline.className = "next-rain-headline";
+
+    if (!next) {
+        headline.textContent = `No rain expected in the next ${dayCount} days`;
+        box.append(headline);
+        return box;
+    }
+
+    const kind = `${describeIntensity(next.peak_mm)} ${describeLikelihood(next.chance_pct)}`;
+    const sameDay = next.start.slice(0, 10) === next.end.slice(0, 10);
+    const until = sameDay ? formatHour(next.end) : formatDayHour(next.end);
+    headline.textContent = next.starts_in_hours === 0
+        ? `${kind} now, until ${until}`
+        : `${kind} ${formatDayHour(next.start)} – ${until} (in ${next.starts_in_hours} h)`;
+
+    const detail = document.createElement("div");
+    detail.className = "next-rain-detail";
+    detail.textContent = [
+        `Heaviest around ${formatHour(next.peak_time)}, ${next.peak_mm} mm/h`,
+        `${next.total_mm} mm total`,
+        `${next.chance_pct}% chance`,
+    ].join(" · ");
+
+    box.append(headline, detail);
+
+    // A stronger downpour after this event would otherwise go unmentioned.
+    if (heaviest && (heaviest.time < next.start || heaviest.time >= next.end)) {
+        const later = document.createElement("div");
+        later.className = "next-rain-detail";
+        later.textContent = `Heaviest in the next 24 h: ${heaviest.rain_mm} mm/h around ` +
+            `${formatDayHour(heaviest.time)}` +
+            (heaviest.chance_pct == null ? "" : `, ${heaviest.chance_pct}% chance`);
+        box.append(later);
+    }
+
+    const note = document.createElement("div");
+    note.className = "next-rain-note";
+    note.textContent = "Hourly model forecast; the timing can shift by an hour or two.";
+    box.append(note);
+    return box;
 }
 
 // Weather and forecast for a point, leaving the map as it is: the location marker and
@@ -119,7 +196,7 @@ function buildTimeline(body) {
             const time = new Date(hour.time);
             return {
                 label: index === 0 ? "Now" : time.toLocaleTimeString(undefined, { hour: "numeric" }),
-                detail: time.toLocaleString(undefined, { weekday: "short", hour: "numeric" }),
+                detail: formatDayHour(hour.time),
                 rain: hour.rain_mm, chance: hour.rain_chance_pct, temp: hour.temp_c,
                 unit: "mm this hour",
             };
