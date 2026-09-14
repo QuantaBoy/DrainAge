@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIH26085</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; }
+        button { font-size: 1rem; padding: .6rem 1.2rem; cursor: pointer; }
+        #location-status { margin-top: 1rem; font-family: ui-monospace, monospace; line-height: 1.6; }
+        #map { height: 26rem; margin-top: 1rem; border-radius: .5rem; }
+        .warn { color: #b3261e; font-size: .85em; }
+        #district-form { margin-top: 1.5rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+        #district { flex: 1 1 14rem; font-size: 1rem; padding: .55rem .7rem; }
+        #weather { margin-top: .75rem; }
+        #weather table { border-collapse: collapse; }
+        #weather td { padding: .2rem .9rem .2rem 0; }
+        #weather td:first-child { color: #5f6368; }
+        #forecast { margin-top: 1.25rem; }
+        #forecast table { border-collapse: collapse; width: 100%; max-width: 32rem; margin-top: .4rem; }
+        #forecast td { padding: .25rem .5rem .25rem 0; white-space: nowrap; }
+        #forecast td:nth-child(2) { width: 45%; }
+        #forecast td:nth-child(3), #forecast td:nth-child(4), #forecast td:nth-child(5) {
+            text-align: right; color: #5f6368;
+        }
+        .bar { display: inline-block; height: .7rem; min-width: 1px;
+               background: #4285f4; border-radius: 2px; vertical-align: middle; }
+        .timeline { max-width: 32rem; margin: .6rem 0 1rem; }
+        .timeline input[type=range] { width: 100%; margin: 0; }
+        .ticks { display: flex; justify-content: space-between; font-size: .72rem;
+                 color: #80868b; margin-top: .15rem; }
+        .ticks .on { color: #1a73e8; font-weight: 600; }
+        .readout { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem; }
+        .readout strong { flex-basis: 100%; }
+        .readout-rain { font-size: 1.35rem; color: #1a73e8; }
+        .readout-rest { color: #5f6368; }
+    </style>
+</head>
+<body>
+    <h1>Welcome To SIH26085</h1>
+    <button id="use-location" type="button">Use My Location</button>
+    <p id="location-status"></p>
+
+    <form id="district-form">
+        <input id="district" name="district" placeholder="District name, e.g. Kanchipuram"
+               required minlength="2" maxlength="80" autocomplete="address-level2">
+        <button type="submit">Get Weather</button>
+    </form>
+    <div id="weather"></div>
+    <div id="forecast"></div>
+
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="{{ url_for('static', path='js/location.js') }}"></script>
+    <script src="{{ url_for('static', path='js/layers.js') }}"></script>
+    <script src="{{ url_for('static', path='js/weather.js') }}"></script>
+</body>
+</html>
