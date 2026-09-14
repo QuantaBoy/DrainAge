@@ -1,8 +1,13 @@
+// Current weather and rainfall forecast panels.
+
+const DEFAULT_DISTRICT = "Chennai";
+
 const form = document.getElementById("district-form");
 const input = document.getElementById("district");
-const out = document.getElementById("weather");
+const weatherBox = document.getElementById("weather");
+const forecastBox = document.getElementById("forecast");
 
-const ROWS = [
+const WEATHER_ROWS = [
     ["Condition", (w) => w.condition],
     ["Temperature", (w) => `${w.temp_c} °C (feels ${w.feels_like_c} °C)`],
     ["Humidity", (w) => `${w.humidity_pct}%`],
@@ -10,111 +15,127 @@ const ROWS = [
     ["Rain, last 1h", (w) => `${w.rain_1h_mm} mm`],
 ];
 
-const DEFAULT_DISTRICT = "Chennai";
+// Requests overlap (page-load default, a location fix, a search), and a slower older
+// response must not overwrite a newer one, so each panel draws only its latest request.
+const latestRequest = { weather: 0, forecast: 0 };
 
-function failIn(box, message) {
+function showError(box, message) {
     const span = document.createElement("span");
     span.className = "warn";
     span.textContent = message;
     box.replaceChildren(span);
 }
 
-const fail = (message) => failIn(out, message);
-
-form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const district = input.value.trim();
-    if (!district) return;
-
-    out.textContent = "Loading…";
-    let res, body;
+// Fetches JSON for a panel. Resolves to the body, or null when the request failed
+// (error shown) or was superseded by a newer one (left alone).
+async function fetchForPanel(panel, box, url) {
+    const id = ++latestRequest[panel];
+    let response;
+    let body;
     try {
-        res = await fetch(`/data-collection/weather?district=${encodeURIComponent(district)}`);
-        body = await res.json();
+        response = await fetch(url);
+        body = await response.json();
     } catch (err) {
-        return fail("Could not reach the server.");
+        if (id === latestRequest[panel]) showError(box, "Could not reach the server.");
+        return null;
     }
-    if (!res.ok) return fail(String(body.detail || res.statusText));
+    if (id !== latestRequest[panel]) return null;
+    if (!response.ok) {
+        // Shown, not swallowed: a hidden panel looks identical to a missing feature.
+        showError(box, String(body.detail || response.statusText));
+        return null;
+    }
+    return body;
+}
+
+async function renderWeather(query, prefix) {
+    weatherBox.textContent = "Loading…";
+    const body = await fetchForPanel("weather", weatherBox, `/data-collection/weather?${query}`);
+    if (!body) return null;
 
     const where = [body.district, body.state, body.country].filter(Boolean).join(", ");
 
     // Built as nodes, not markup: every value here is third-party API text.
     const heading = document.createElement("strong");
-    heading.textContent = where;
+    heading.textContent = prefix ? `${prefix}: ${where}` : where;
     const table = document.createElement("table");
-    for (const [label, value] of ROWS) {
+    for (const [label, value] of WEATHER_ROWS) {
         const row = table.insertRow();
         row.insertCell().textContent = label;
         row.insertCell().textContent = value(body);
     }
-    out.replaceChildren(heading, table);
-
-    showPlace(body.lat, body.lon, where);
-    renderForecast(`district=${encodeURIComponent(district)}`, where);
-});
+    weatherBox.replaceChildren(heading, table);
+    return { body, where };
+}
 
 async function renderForecast(query, title) {
-    const box = document.getElementById("forecast");
-    box.textContent = "Loading forecast…";
+    forecastBox.textContent = "Loading forecast…";
+    const body = await fetchForPanel("forecast", forecastBox, `/data-collection/forecast?${query}`);
+    if (!body) return;
 
-    let res, body;
-    try {
-        res = await fetch(`/data-collection/forecast?${query}`);
-        body = await res.json();
-    } catch (err) {
-        return failIn(box, "Could not reach the server for the forecast.");
-    }
-    // Shown, not swallowed: a hidden forecast looks identical to a missing feature.
-    if (!res.ok) return failIn(box, String(body.detail || res.statusText));
+    const where = title || [body.district, body.state].filter(Boolean).join(", ");
+    const heading = document.createElement("strong");
+    heading.textContent = where ? `Rainfall forecast, ${where}` : "Rainfall forecast";
+    forecastBox.replaceChildren(heading, buildTimeline(body), buildWeekTable(body.days));
+}
 
-    const peak = Math.max(...body.days.map((d) => d.rain_mm), 1);
+// Weather and forecast for a point, leaving the map as it is: the location marker and
+// its accuracy circle are already drawn there.
+function weatherAt(lat, lon, label) {
+    const query = `lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`;
+    renderWeather(query, label);
+    renderForecast(query, label.toLowerCase());
+}
+
+function buildWeekTable(days) {
+    // Bars are scaled to the wettest day shown, so the shape of the week reads at a
+    // glance even when totals are small.
+    const peak = Math.max(...days.map((day) => day.rain_mm), 1);
     const table = document.createElement("table");
     table.className = "forecast";
-    for (const day of body.days) {
-        const row = table.insertRow();
-        const when = new Date(day.date + "T00:00:00");
-        row.insertCell().textContent = when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 
-        // Bar width is relative to the wettest day shown, so the shape of the week
-        // reads at a glance even when totals are small.
-        const barCell = row.insertCell();
+    for (const day of days) {
+        const row = table.insertRow();
+        const date = new Date(`${day.date}T00:00:00`);
+        row.insertCell().textContent = date.toLocaleDateString(undefined, {
+            weekday: "short", day: "numeric", month: "short",
+        });
+
         const bar = document.createElement("span");
         bar.className = "bar";
         bar.style.width = `${Math.round((day.rain_mm / peak) * 100)}%`;
-        barCell.append(bar);
+        row.insertCell().append(bar);
 
         row.insertCell().textContent = `${day.rain_mm.toFixed(1)} mm`;
         row.insertCell().textContent = day.rain_chance_pct == null ? "" : `${day.rain_chance_pct}%`;
         row.insertCell().textContent = day.temp_max_c == null ? "" : `${Math.round(day.temp_max_c)}°`;
     }
-
-    const heading = document.createElement("strong");
-    const where = title || [body.district, body.state].filter(Boolean).join(", ");
-    heading.textContent = where ? `Rainfall forecast, ${where}` : "Rainfall forecast";
-    box.replaceChildren(heading, buildTimeline(body), table);
+    return table;
 }
 
 // One slider across both scales: the next few hours, then the coming days. Flood
-// timing is read at hour resolution, while the week gives the build-up around it.
+// timing is read at hour resolution, while the week shows the build-up around it.
 function buildTimeline(body) {
     const steps = [
-        ...body.hours.map((h, i) => ({
-            label: i === 0 ? "Now" : new Date(h.time).toLocaleTimeString(undefined, { hour: "numeric" }),
-            detail: new Date(h.time).toLocaleString(undefined, { weekday: "short", hour: "numeric" }),
-            rain: h.rain_mm, chance: h.rain_chance_pct, temp: h.temp_c, unit: "mm this hour",
-        })),
-        ...body.days.map((d) => {
-            const when = new Date(d.date + "T00:00:00");
+        ...body.hours.map((hour, index) => {
+            const time = new Date(hour.time);
             return {
-                label: when.toLocaleDateString(undefined, { weekday: "short" }),
-                detail: when.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
-                rain: d.rain_mm, chance: d.rain_chance_pct, temp: d.temp_max_c, unit: "mm this day",
+                label: index === 0 ? "Now" : time.toLocaleTimeString(undefined, { hour: "numeric" }),
+                detail: time.toLocaleString(undefined, { weekday: "short", hour: "numeric" }),
+                rain: hour.rain_mm, chance: hour.rain_chance_pct, temp: hour.temp_c,
+                unit: "mm this hour",
+            };
+        }),
+        ...body.days.map((day) => {
+            const date = new Date(`${day.date}T00:00:00`);
+            return {
+                label: date.toLocaleDateString(undefined, { weekday: "short" }),
+                detail: date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
+                rain: day.rain_mm, chance: day.rain_chance_pct, temp: day.temp_max_c,
+                unit: "mm this day",
             };
         }),
     ];
-
-    const wrap = document.createElement("div");
-    wrap.className = "timeline";
 
     const slider = document.createElement("input");
     Object.assign(slider, { type: "range", min: 0, max: steps.length - 1, value: 0, step: 1 });
@@ -131,43 +152,46 @@ function buildTimeline(body) {
     const readout = document.createElement("div");
     readout.className = "readout";
 
-    const show = () => {
-        const step = steps[slider.value];
-        readout.replaceChildren();
+    const showStep = () => {
+        const index = Number(slider.value);
+        const step = steps[index];
+
         const when = document.createElement("strong");
         when.textContent = step.detail;
         const rain = document.createElement("span");
         rain.className = "readout-rain";
         rain.textContent = `${step.rain.toFixed(1)} ${step.unit}`;
-        const rest = document.createElement("span");
-        rest.className = "readout-rest";
-        rest.textContent = [
+        const extra = document.createElement("span");
+        extra.className = "readout-extra";
+        extra.textContent = [
             step.chance == null ? null : `${step.chance}% chance`,
             step.temp == null ? null : `${Math.round(step.temp)}°C`,
         ].filter(Boolean).join(" · ");
-        readout.append(when, rain, rest);
 
-        [...ticks.children].forEach((t, i) => t.classList.toggle("on", i === Number(slider.value)));
+        readout.replaceChildren(when, rain, extra);
+        [...ticks.children].forEach((tick, i) => tick.classList.toggle("on", i === index));
     };
 
-    slider.addEventListener("input", show);
-    show();
+    slider.addEventListener("input", showStep);
+    showStep();
 
-    wrap.append(slider, ticks, readout);
-    return wrap;
+    const timeline = document.createElement("div");
+    timeline.className = "timeline";
+    timeline.append(slider, ticks, readout);
+    return timeline;
 }
 
-// The forecast is the point of the page, so it loads with the page rather than
-// waiting for a search: the last known position if there is one, else a default.
-(function initialForecast() {
-    let saved = null;
-    try {
-        saved = JSON.parse(localStorage.getItem(LAST_FIX_KEY) || "null");
-    } catch (e) { /* storage unavailable */ }
+form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const district = input.value.trim();
+    if (!district) return;
 
-    if (saved) {
-        renderForecast(`lat=${saved.lat}&lon=${saved.lon}`, "your last known location");
-    } else {
-        renderForecast(`district=${encodeURIComponent(DEFAULT_DISTRICT)}`);
-    }
-})();
+    const result = await renderWeather(`district=${encodeURIComponent(district)}`);
+    if (!result) return;
+    showPlace(result.body.lat, result.body.lon, result.where);
+    renderForecast(`district=${encodeURIComponent(district)}`, result.where);
+});
+
+// The forecast is the point of the page, so it loads with the page instead of
+// waiting for a search.
+renderForecast(`district=${encodeURIComponent(DEFAULT_DISTRICT)}`);

@@ -1,7 +1,8 @@
-const GOOD_FIX_M = 100;      // GPS-grade, stop refining
+// Device location on the shared map, reported with its real accuracy.
+
+const GOOD_FIX_M = 100;      // GPS-grade: stop refining
 const USABLE_FIX_M = 2000;
-const GPS_LOCK_MS = 45000;   // cold GPS lock takes tens of seconds
-const LAST_FIX_KEY = "lastFix";
+const GPS_LOCK_MS = 45000;   // a cold GPS lock takes tens of seconds
 
 const statusEl = document.getElementById("location-status");
 let watchId = null;
@@ -15,104 +16,104 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
 
-function describeAccuracy(m) {
-    if (m <= GOOD_FIX_M) return { label: "GPS-grade", css: "#137333" };
-    if (m <= USABLE_FIX_M) return { label: "Wi-Fi fix, not GPS", css: "#8a4b00" };
-    return { label: "very rough, likely IP based", css: "#b3261e" };
+function describeAccuracy(metres) {
+    if (metres <= GOOD_FIX_M) return { label: "GPS-grade", color: "#137333" };
+    if (metres <= USABLE_FIX_M) return { label: "Wi-Fi fix, not GPS", color: "#8a4b00" };
+    return { label: "very rough, likely IP based", color: "#b3261e" };
 }
 
-function render(lat, lon, accuracy, final, stale) {
-    const q = stale ? { label: "last known", css: "#5f6368" } : describeAccuracy(accuracy);
-    const dist = accuracy >= 1000 ? `${(accuracy / 1000).toFixed(1)}km` : `${Math.round(accuracy)}m`;
+function formatDistance(metres) {
+    return metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres)} m`;
+}
 
-    statusEl.innerHTML =
-        `<span style="color:${q.css}">${final ? "" : "refining… "}` +
-        `${lat.toFixed(5)}, ${lon.toFixed(5)} &plusmn;${dist} (${q.label})</span>` +
-        // A Wi-Fi fix reports optimistic accuracy but resolves to whichever mapped network
-        // it saw, which can be kilometres off, so anything short of GPS-grade is flagged.
-        (final && !stale && accuracy > GOOD_FIX_M
-            ? `<br><span class="warn">No GPS on this device, so this is the location of a nearby ` +
-              `network, not you &mdash; the real error can be larger than the circle. ` +
-              `Click your actual position on the map, or open this page on a phone with GPS.</span>`
-            : "");
+function setStatus(text, color) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    if (color) span.style.color = color;
+    statusEl.replaceChildren(span);
+}
 
+function warnStatus(text) {
+    const span = document.createElement("span");
+    span.className = "warn";
+    span.textContent = text;
+    statusEl.replaceChildren(span);
+}
+
+function clearMarker() {
     if (marker) map.removeLayer(marker);
     if (accuracyCircle) map.removeLayer(accuracyCircle);
+    marker = null;
+    accuracyCircle = null;
+}
 
-    marker = L.marker([lat, lon], { opacity: stale ? 0.5 : 1 }).addTo(map);
+function stopWatching() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    clearTimeout(deadlineTimer);
+}
+
+function showFix(lat, lon, accuracy, final) {
+    const quality = describeAccuracy(accuracy);
+    const distance = formatDistance(accuracy);
+
+    setStatus(
+        `${final ? "" : "Refining… "}${lat.toFixed(5)}, ${lon.toFixed(5)} ` +
+        `±${distance} (${quality.label})`,
+        quality.color,
+    );
+    // A Wi-Fi fix reports optimistic accuracy yet resolves to whichever mapped network
+    // it saw, which can be kilometres off, so anything short of GPS-grade is flagged.
+    if (final && accuracy > GOOD_FIX_M) {
+        const note = document.createElement("span");
+        note.className = "warn";
+        note.textContent = "No GPS on this device, so this is the location of a nearby " +
+            "network, and the real error can exceed the circle. Click your actual " +
+            "position on the map, or open this page on a phone with GPS.";
+        statusEl.append(document.createElement("br"), note);
+    }
+
+    clearMarker();
+    marker = L.marker([lat, lon]).addTo(map);
     accuracyCircle = L.circle([lat, lon], {
-        radius: accuracy, color: q.css, weight: 1, fillOpacity: stale ? 0.04 : 0.08,
-        dashArray: stale ? "4" : null,
-    }).addTo(map).bindPopup(`Reported accuracy: &plusmn;${dist}`);
+        radius: accuracy, color: quality.color, weight: 1, fillOpacity: 0.08,
+    }).addTo(map).bindPopup(`Reported accuracy: ±${distance}`);
 
-    // The circle is the honest picture: the true position is somewhere inside it,
-    // so frame that area rather than zooming to a point the fix cannot support.
+    // The true position lies somewhere inside the circle, so frame that area rather
+    // than zooming to a point the fix cannot support.
     map.fitBounds(accuracyCircle.getBounds(), { maxZoom: 17 });
 
-    if (final && !stale) {
-        try {
-            localStorage.setItem(LAST_FIX_KEY, JSON.stringify({ lat, lon, accuracy, at: Date.now() }));
-        } catch (e) { /* private mode or storage disabled */ }
-        renderForecast(`lat=${lat}&lon=${lon}`, "your location");
-    }
+    if (final) weatherAt(lat, lon, "Your location");
 }
 
-// Used by the district search to point the shared map at a looked-up place.
+// Points the map at a searched district.
 function showPlace(lat, lon, label) {
-    if (marker) map.removeLayer(marker);
-    if (accuracyCircle) map.removeLayer(accuracyCircle);
-    accuracyCircle = null;
+    clearMarker();
     marker = L.marker([lat, lon]).addTo(map).bindPopup(label);
     map.setView([lat, lon], 11);
 }
 
-function ago(then) {
-    const mins = Math.round((Date.now() - then) / 60000);
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-    if (mins < 60) return rtf.format(-mins, "minute");
-    if (mins < 1440) return rtf.format(-Math.round(mins / 60), "hour");
-    return rtf.format(-Math.round(mins / 1440), "day");
-}
-
-// Mirrors what Maps does with no live fix: open on where you were, clearly marked stale,
-// rather than a blank world view.
-try {
-    const saved = JSON.parse(localStorage.getItem(LAST_FIX_KEY) || "null");
-    if (saved) {
-        render(saved.lat, saved.lon, saved.accuracy, true, true);
-        statusEl.innerHTML += `<br><span style="color:#5f6368;font-size:.85em">` +
-            `From your last visit, ${ago(saved.at)}. Press the button for a live fix.</span>`;
-    }
-} catch (e) { /* corrupt or unavailable storage, start blank */ }
-
-map.on("click", (e) => {
-    if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-    }
-    clearTimeout(deadlineTimer);
-    if (accuracyCircle) map.removeLayer(accuracyCircle);
-    accuracyCircle = null;
-    if (marker) map.removeLayer(marker);
-
-    const { lat, lng } = e.latlng;
+map.on("click", (event) => {
+    stopWatching();
+    const { lat, lng } = event.latlng;
+    clearMarker();
     marker = L.marker([lat, lng]).addTo(map);
-    statusEl.innerHTML = `<span style="color:#137333">${lat.toFixed(5)}, ${lng.toFixed(5)} (set manually)</span>`;
+    setStatus(`${lat.toFixed(5)}, ${lng.toFixed(5)} (set manually)`, "#137333");
+    weatherAt(lat, lng, "Selected point");
 });
 
 document.getElementById("use-location").addEventListener("click", () => {
     if (!navigator.geolocation) {
-        statusEl.textContent = "Geolocation not supported by this browser.";
+        warnStatus("Geolocation is not supported by this browser.");
         return;
     }
     if (!window.isSecureContext) {
-        statusEl.textContent = "Location needs HTTPS or localhost.";
+        warnStatus("Location needs HTTPS or localhost.");
         return;
     }
 
-    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-    if (deadlineTimer) clearTimeout(deadlineTimer);
-    statusEl.textContent = "Locating…";
+    stopWatching();
+    setStatus("Locating…");
 
     let best = null;
     let settled = false;
@@ -120,42 +121,40 @@ document.getElementById("use-location").addEventListener("click", () => {
     const settle = () => {
         if (settled) return;
         settled = true;
-        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-        clearTimeout(deadlineTimer);
+        stopWatching();
         if (best) {
-            render(best.coords.latitude, best.coords.longitude, best.coords.accuracy, true);
+            showFix(best.coords.latitude, best.coords.longitude, best.coords.accuracy, true);
         } else {
-            statusEl.innerHTML = `<span class="warn">No position after ${GPS_LOCK_MS / 1000}s. ` +
-                `GPS rarely locks indoors &mdash; try near a window or outside, ` +
-                `or click your position on the map.</span>`;
+            warnStatus(`No position after ${GPS_LOCK_MS / 1000}s. GPS rarely locks ` +
+                "indoors; try near a window or outside, or click your position on the map.");
         }
     };
 
-    // A phone answers with a coarse network fix within a second, then tightens as GPS
-    // locks satellites, which takes tens of seconds from cold. Settling early would
-    // freeze that first coarse fix, so keep the best reading until GPS-grade or deadline.
+    // A phone first answers with a coarse network fix, then tightens as GPS locks
+    // satellites. Settling early would freeze that coarse fix, so the best reading is
+    // kept until it is GPS-grade or the deadline passes.
     watchId = navigator.geolocation.watchPosition(
-        (pos) => {
+        (position) => {
             if (settled) return;
-            if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
-            if (best.coords.accuracy <= GOOD_FIX_M) settle();
-            else render(best.coords.latitude, best.coords.longitude, best.coords.accuracy, false);
+            if (!best || position.coords.accuracy < best.coords.accuracy) best = position;
+            if (best.coords.accuracy <= GOOD_FIX_M) {
+                settle();
+            } else {
+                showFix(best.coords.latitude, best.coords.longitude, best.coords.accuracy, false);
+            }
         },
-        (err) => {
+        (error) => {
             // A timeout still leaves any earlier coarse fix worth showing.
-            if (err.code === err.TIMEOUT && best) return settle();
+            if (error.code === error.TIMEOUT && best) return settle();
             if (settled) return;
             settled = true;
-            if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-            watchId = null;
-            clearTimeout(deadlineTimer);
-            const hint = err.code === err.PERMISSION_DENIED
-                ? "Permission denied. Allow location for this site, and check location is on in your phone's system settings."
-                : err.message;
-            statusEl.innerHTML = `<span class="warn">${hint}</span>`;
+            stopWatching();
+            warnStatus(error.code === error.PERMISSION_DENIED
+                ? "Permission denied. Allow location for this site, and check that " +
+                  "location is on in your device settings."
+                : error.message);
         },
-        { enableHighAccuracy: true, timeout: GPS_LOCK_MS, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: GPS_LOCK_MS, maximumAge: 0 },
     );
 
     deadlineTimer = setTimeout(settle, GPS_LOCK_MS);
