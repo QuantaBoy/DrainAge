@@ -1,7 +1,5 @@
 // Current weather and rainfall forecast panels.
 
-const DEFAULT_DISTRICT = "Chennai";
-
 const form = document.getElementById("district-form");
 const input = document.getElementById("district");
 const weatherBox = document.getElementById("weather");
@@ -15,7 +13,7 @@ const WEATHER_ROWS = [
     ["Rain, last 1h", (w) => `${w.rain_1h_mm} mm`],
 ];
 
-// Requests overlap (page-load default, a location fix, a search), and a slower older
+// Requests overlap (a location fix, a map click, a search), and a slower older
 // response must not overwrite a newer one, so each panel draws only its latest request.
 const latestRequest = { weather: 0, forecast: 0 };
 
@@ -191,7 +189,3 @@ form.addEventListener("submit", async (event) => {
     showPlace(result.body.lat, result.body.lon, result.where);
     renderForecast(`district=${encodeURIComponent(district)}`, result.where);
 });
-
-// The forecast is the point of the page, so it loads with the page instead of
-// waiting for a search.
-renderForecast(`district=${encodeURIComponent(DEFAULT_DISTRICT)}`);
