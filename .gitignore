@@ -1,4 +1,5 @@
-certs/
 .env
+certs/
 __pycache__/
 *.pyc
+.vscode/
