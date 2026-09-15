@@ -17,6 +17,11 @@ const WEATHER_ROWS = [
 // response must not overwrite a newer one, so each panel draws only its latest request.
 const latestRequest = { weather: 0, forecast: 0 };
 
+// Now plus the next 3 hours: the nowcast window.
+const NOWCAST_STEPS = 4;
+// Hours start at the current hour, so 48 always reaches the end of tomorrow.
+const FORECAST_HOURS = 48;
+
 function showError(box, message) {
     const span = document.createElement("span");
     span.className = "warn";
@@ -68,7 +73,7 @@ async function renderWeather(query, prefix) {
 
 async function renderForecast(query, title) {
     forecastBox.textContent = "Loading forecast…";
-    const body = await fetchForPanel("forecast", forecastBox, `/data-collection/forecast?${query}`);
+    const body = await fetchForPanel("forecast", forecastBox, `/data-collection/forecast?${query}&hours=${FORECAST_HOURS}`);
     if (!body) return;
 
     const where = title || [body.district, body.state].filter(Boolean).join(", ");
@@ -188,41 +193,60 @@ function buildWeekTable(days) {
     return table;
 }
 
-// One slider across both scales: the next few hours, then the coming days. Flood
-// timing is read at hour resolution, while the week shows the build-up around it.
+function hourStep(hour, label) {
+    return {
+        label, detail: formatDayHour(hour.time),
+        rain: hour.rain_mm, chance: hour.rain_chance_pct, temp: hour.temp_c,
+    };
+}
+
+// Two windows on one slider: "Today" is the 0–3 h nowcast that flood warnings act on,
+// "Tomorrow" is tomorrow hour by hour, for planning ahead.
 function buildTimeline(body) {
-    const steps = [
-        ...body.hours.map((hour, index) => {
-            const time = new Date(hour.time);
-            return {
-                label: index === 0 ? "Now" : time.toLocaleTimeString(undefined, { hour: "numeric" }),
-                detail: formatDayHour(hour.time),
-                rain: hour.rain_mm, chance: hour.rain_chance_pct, temp: hour.temp_c,
-                unit: "mm this hour",
-            };
-        }),
-        ...body.days.map((day) => {
-            const date = new Date(`${day.date}T00:00:00`);
-            return {
-                label: date.toLocaleDateString(undefined, { weekday: "short" }),
-                detail: date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
-                rain: day.rain_mm, chance: day.rain_chance_pct, temp: day.temp_max_c,
-                unit: "mm this day",
-            };
-        }),
-    ];
+    const tomorrow = body.days[1];
+    const views = {
+        now: {
+            steps: body.hours.slice(0, NOWCAST_STEPS)
+                .map((hour, i) => hourStep(hour, i === 0 ? "Now" : `+${i} h`)),
+            note: "Next 3 hours",
+        },
+        future: {
+            // Every hour stays selectable, but only every third is labelled so 24 fit.
+            steps: body.hours.filter((hour) => hour.time.startsWith(tomorrow.date))
+                .map((hour, i) => hourStep(hour, i % 3 === 0
+                    ? new Date(hour.time).toLocaleTimeString(undefined, { hour: "numeric" })
+                    : "")),
+            note: `Tomorrow: ${tomorrow.rain_mm.toFixed(1)} mm total` +
+                (tomorrow.rain_chance_pct == null ? "" : `, ${tomorrow.rain_chance_pct}% chance`),
+        },
+    };
+    let steps = views.now.steps;
+
+    const toggle = document.createElement("div");
+    toggle.className = "mode-toggle";
+    toggle.setAttribute("role", "group");
+    toggle.setAttribute("aria-label", "Forecast window");
+    const buttons = {};
+    for (const [key, text, number] of [["now", "Today", "01"], ["future", "Tomorrow", "02"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        const sup = document.createElement("sup");
+        sup.textContent = number;
+        button.append(text, sup);
+        button.addEventListener("click", () => select(key));
+        buttons[key] = button;
+        toggle.append(button);
+    }
+
+    const note = document.createElement("div");
+    note.className = "timeline-note";
 
     const slider = document.createElement("input");
-    Object.assign(slider, { type: "range", min: 0, max: steps.length - 1, value: 0, step: 1 });
+    Object.assign(slider, { type: "range", min: 0, value: 0, step: 1 });
     slider.setAttribute("aria-label", "Forecast time");
 
     const ticks = document.createElement("div");
     ticks.className = "ticks";
-    for (const step of steps) {
-        const tick = document.createElement("span");
-        tick.textContent = step.label;
-        ticks.append(tick);
-    }
 
     const readout = document.createElement("div");
     readout.className = "readout";
@@ -235,7 +259,7 @@ function buildTimeline(body) {
         when.textContent = step.detail;
         const rain = document.createElement("span");
         rain.className = "readout-rain";
-        rain.textContent = `${step.rain.toFixed(1)} ${step.unit}`;
+        rain.textContent = `${step.rain.toFixed(1)} mm this hour`;
         const extra = document.createElement("span");
         extra.className = "readout-extra";
         extra.textContent = [
@@ -247,12 +271,28 @@ function buildTimeline(body) {
         [...ticks.children].forEach((tick, i) => tick.classList.toggle("on", i === index));
     };
 
+    const select = (key) => {
+        steps = views[key].steps;
+        for (const [name, button] of Object.entries(buttons)) {
+            button.setAttribute("aria-pressed", String(name === key));
+        }
+        note.textContent = views[key].note;
+        slider.max = steps.length - 1;
+        slider.value = 0;
+        ticks.replaceChildren(...steps.map((step) => {
+            const tick = document.createElement("span");
+            tick.textContent = step.label;
+            return tick;
+        }));
+        showStep();
+    };
+
     slider.addEventListener("input", showStep);
-    showStep();
+    select("now");
 
     const timeline = document.createElement("div");
     timeline.className = "timeline";
-    timeline.append(slider, ticks, readout);
+    timeline.append(toggle, note, slider, ticks, readout);
     return timeline;
 }
 
