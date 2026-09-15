@@ -23,7 +23,27 @@ for (const [label, layer] of WEATHER_LAYERS) {
     });
 }
 
-L.control.layers(null, weatherOverlays, { collapsed: false }).addTo(map);
+const layerControl = L.control.layers(null, weatherOverlays, { collapsed: false }).addTo(map);
+
+// --- Street network --------------------------------------------------------------
+// Chennai's roads, fetched once and cached server-side; this is the geometry later
+// flood-depth and routing features attach data to.
+
+fetch("/data-collection/streets")
+    .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    })
+    .then((geojson) => {
+        const streets = L.geoJSON(geojson, {
+            style: { color: "#616161", weight: 1.5, opacity: 0.7 },
+            onEachFeature: (feature, layer) => {
+                if (feature.properties.name) layer.bindTooltip(feature.properties.name);
+            },
+        }).addTo(map);
+        layerControl.addOverlay(streets, "Streets");
+    })
+    .catch((err) => console.warn("Street network unavailable:", err.message));
 
 // --- Rain movement forecast -----------------------------------------------------
 // Hourly rainfall on a grid around the selected place, animated so the direction and

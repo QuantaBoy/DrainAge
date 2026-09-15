@@ -3,3 +3,4 @@ certs/
 __pycache__/
 *.pyc
 .vscode/
+app/data/
