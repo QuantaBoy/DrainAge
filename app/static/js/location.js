@@ -16,6 +16,12 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
 
+// Automatic map moves may pan or zoom in, but never zoom out: a user who has zoomed
+// in to read streets should not lose that view because something loaded.
+function focusMap(latlng, zoom) {
+    map.setView(latlng, Math.max(map.getZoom(), zoom));
+}
+
 function describeAccuracy(metres) {
     if (metres <= GOOD_FIX_M) return { label: "GPS-grade", color: "#137333" };
     if (metres <= USABLE_FIX_M) return { label: "Wi-Fi fix, not GPS", color: "#8a4b00" };
@@ -81,7 +87,7 @@ function showFix(lat, lon, accuracy, final) {
 
     // The true position lies somewhere inside the circle, so frame that area rather
     // than zooming to a point the fix cannot support.
-    map.fitBounds(accuracyCircle.getBounds(), { maxZoom: 17 });
+    focusMap([lat, lon], Math.min(map.getBoundsZoom(accuracyCircle.getBounds()), 17));
 
     if (final) weatherAt(lat, lon, "Your location");
 }
@@ -90,7 +96,7 @@ function showFix(lat, lon, accuracy, final) {
 function showPlace(lat, lon, label) {
     clearMarker();
     marker = L.marker([lat, lon]).addTo(map).bindPopup(label);
-    map.setView([lat, lon], 11);
+    focusMap([lat, lon], 11);
 }
 
 map.on("click", (event) => {

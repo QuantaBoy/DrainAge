@@ -102,7 +102,6 @@ const rain = {
     bounds: null,
     frame: 0,             // fractional hour index into the grid
     playing: false,
-    framed: false,        // whether the map has been fitted to this grid yet
     lastTick: null,
     lastDraw: 0,
     animationId: null,
@@ -247,12 +246,6 @@ rainUi.play.addEventListener("click", () => {
         stopRain();
         return;
     }
-    // Movement is only visible across the whole grid, so the first play zooms out to
-    // it; later plays leave the map wherever the user has put it.
-    if (!rain.framed) {
-        map.fitBounds(rain.bounds);
-        rain.framed = true;
-    }
     rain.playing = true;
     rainUi.play.textContent = "❚❚ Pause";
     rain.animationId = requestAnimationFrame(animateRain);
@@ -296,7 +289,6 @@ async function loadRainGrid(lat, lon) {
     rain.grid = grid;
     rain.query = query;
     rain.frame = 0;
-    rain.framed = false;
     rain.bounds = L.latLngBounds(
         [grid.lats[0] - half, grid.lons[0] - half],
         [grid.lats[last] + half, grid.lons[last] + half],
