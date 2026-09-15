@@ -36,6 +36,18 @@ const STREET_WEIGHTS = { motorway: 5, trunk: 5, primary: 4, secondary: 3, tertia
 const streetRenderer = L.canvas({ padding: 0.5 });
 const STREET_ZOOM = 15;
 const CHENNAI_CENTRE = [13.0827, 80.2707];
+// Matches the area the server maps (streets.CHENNAI_BBOX).
+const CHENNAI_BOUNDS = L.latLngBounds([12.85, 80.10], [13.25, 80.35]);
+
+// Zoomed out, a Chennai-wide layer merges into one blob, so ticking one zooms in: on
+// the selected place if it is in Chennai, else wherever the map already is in
+// Chennai, else the city centre. Never zooms out.
+function zoomIntoChennai(zoom) {
+    if (map.getZoom() >= zoom) return;
+    const target = [marker && marker.getLatLng(), map.getCenter()]
+        .find((point) => point && CHENNAI_BOUNDS.contains(point)) || CHENNAI_CENTRE;
+    map.setView(target, zoom);
+}
 
 fetch("/data-collection/streets")
     .then((response) => {
@@ -55,19 +67,129 @@ fetch("/data-collection/streets")
             },
         });
         layerControl.addOverlay(streets, "Streets (Chennai)");
-
-        // Zoomed out, the whole network merges into one blob, so ticking the layer
-        // zooms in to street level: on the selected place if it is in Chennai, else
-        // wherever the map already is in Chennai, else the city centre.
         map.on("overlayadd", (event) => {
-            if (event.layer !== streets || map.getZoom() >= STREET_ZOOM) return;
-            const bounds = streets.getBounds();
-            const target = [marker && marker.getLatLng(), map.getCenter()]
-                .find((point) => point && bounds.contains(point)) || CHENNAI_CENTRE;
-            map.setView(target, STREET_ZOOM);
+            if (event.layer === streets) zoomIntoChennai(STREET_ZOOM);
         });
     })
     .catch((err) => console.warn("Street network unavailable:", err.message));
+
+// --- Street water flow ------------------------------------------------------------
+// Rain routed downhill along the street network: animated lines show which way water
+// runs and how much, circles show where it pools and how deep.
+
+const FLOW_ZOOM = 14;
+const FLOW_SCENARIOS = [
+    ["", "Forecast, next 3 h"],
+    ["50", "Scenario: 50 mm in 3 h"],
+    ["100", "Scenario: 100 mm in 3 h"],
+    ["200", "Scenario: 200 mm in 3 h"],
+];
+// Depth bands in cm, deepest first: 30 cm stalls most cars.
+const POND_BANDS = [
+    { min: 30, color: "#c62828", label: "30 cm+ impassable" },
+    { min: 10, color: "#ef6c00", label: "10–30 cm" },
+    { min: 0, color: "#f9a825", label: "under 10 cm" },
+];
+
+const flowLayer = L.layerGroup();
+layerControl.addOverlay(flowLayer, "Water flow (Chennai)");
+const flow = { request: 0 };
+
+const flowUi = (() => {
+    const container = element("div", "flow-control leaflet-bar");
+    container.hidden = true;
+    const title = element("div", "rain-control-title", "Street water flow");
+    const scenario = element("select");
+    scenario.setAttribute("aria-label", "Rain input");
+    for (const [value, label] of FLOW_SCENARIOS) {
+        const option = element("option", null, label);
+        option.value = value;
+        scenario.append(option);
+    }
+    const status = element("div", "flow-status");
+    const legend = element("div", "rain-legend");
+    for (const band of POND_BANDS) {
+        const item = element("span");
+        const swatch = element("i");
+        swatch.style.background = band.color;
+        item.append(swatch, band.label);
+        legend.append(item);
+    }
+    const note = element("div", "rain-note");
+    container.append(title, scenario, status, legend, note);
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    const FlowControl = L.Control.extend({ options: { position: "bottomright" }, onAdd: () => container });
+    new FlowControl().addTo(map);
+    return { container, scenario, status, note };
+})();
+
+function pondColor(depthCm) {
+    return POND_BANDS.find((band) => depthCm >= band.min).color;
+}
+
+async function loadFlow() {
+    const id = ++flow.request;
+    const rain = flowUi.scenario.value;
+    flowUi.status.textContent = "Routing rain along the streets…";
+    let data;
+    try {
+        const response = await fetch(`/data-collection/street-flow${rain ? `?rain_mm=${rain}` : ""}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        data = await response.json();
+    } catch (err) {
+        if (id === flow.request) flowUi.status.textContent = `Water flow unavailable (${err.message}).`;
+        return;
+    }
+    if (id !== flow.request) return;
+
+    flowLayer.clearLayers();
+    L.geoJSON(data.flows, {
+        // Wider lines carry water from a larger area of streets.
+        style: (feature) => ({
+            className: "water-flow",
+            color: "#1565c0",
+            weight: Math.min(7, 1.5 + Math.log10(1 + feature.properties.drained_ha) * 1.6),
+            opacity: 0.85,
+        }),
+        onEachFeature: (feature, layer) => {
+            const { name, volume_m3: volume } = feature.properties;
+            layer.bindTooltip(`${name || "Unnamed street"}: ${volume.toLocaleString()} m³ flowing downhill`);
+        },
+    }).addTo(flowLayer);
+    L.geoJSON(data.ponds, {
+        pointToLayer: (feature, latlng) => {
+            const { depth_cm: depth, capped } = feature.properties;
+            return L.circleMarker(latlng, {
+                radius: Math.min(12, 4 + depth / 10),
+                color: "#fff", weight: 1, fillColor: pondColor(depth), fillOpacity: 0.9,
+            }).bindTooltip(`Water pools here: about ${depth}${capped ? "+" : ""} cm`);
+        },
+    }).addTo(flowLayer);
+
+    const source = data.rain_source === "forecast" ? "forecast" : "scenario";
+    flowUi.status.textContent = `${data.rain_mm} mm of rain over ${data.hours} h (${source}) · ` +
+        `${data.ponds.features.length.toLocaleString()} pooling spots`;
+    flowUi.note.textContent = data.surface_water_mm > 0
+        ? `Drains assumed to take ${data.drain_allowance_mm_per_h} mm/h; depths are estimates ` +
+          "from a 30 m elevation model."
+        : `Drains are assumed to take ${data.drain_allowance_mm_per_h} mm/h, so this rain ` +
+          "drains away. Lines show where water would run.";
+}
+
+flowUi.scenario.addEventListener("change", loadFlow);
+
+map.on("overlayadd", (event) => {
+    if (event.layer !== flowLayer) return;
+    flowUi.container.hidden = false;
+    zoomIntoChennai(FLOW_ZOOM);
+    loadFlow();
+});
+map.on("overlayremove", (event) => {
+    if (event.layer !== flowLayer) return;
+    flowUi.container.hidden = true;
+    flow.request++;
+});
 
 // --- Rain movement forecast -----------------------------------------------------
 // Hourly rainfall on a grid around the selected place, animated so the direction and

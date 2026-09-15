@@ -58,6 +58,15 @@ button { font-size: 1rem; padding: .6rem 1.2rem; cursor: pointer; }
                  border-radius: 2px; vertical-align: -1px; }
 .rain-note:not(:empty) { margin-top: .25rem; color: #5f6368; }
 
+.flow-control { background: #fff; padding: .45rem .6rem; font-size: .8rem; max-width: 16rem; }
+.flow-control[hidden] { display: none; }
+.flow-control select { width: 100%; margin: .2rem 0; font-size: .8rem; }
+.flow-status { margin-top: .2rem; }
+/* Dashes march along each line in its drawn direction, which is downhill. */
+.water-flow { stroke-dasharray: 6 10; animation: water-flow 1.2s linear infinite; }
+@keyframes water-flow { to { stroke-dashoffset: -16; } }
+@media (prefers-reduced-motion: reduce) { .water-flow { animation: none; } }
+
 #rain-data { margin-top: 1rem; font-size: .85rem; }
 #rain-data h2 { font-size: 1rem; margin: 0 0 .4rem; }
 #rain-data code { font-size: .78rem; background: #f1f3f4; padding: .1rem .3rem;
