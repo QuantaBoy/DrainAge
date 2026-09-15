@@ -18,10 +18,11 @@ ROOT_DIR = BASE_DIR.parent
 sys.path.insert(0, str(ROOT_DIR))
 load_dotenv(ROOT_DIR / ".env")
 
-from app.routes import weather  # noqa: E402
+from app.routes import streets, weather  # noqa: E402
 
 app = FastAPI()
 app.include_router(weather.router)
+app.include_router(streets.router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
