@@ -29,6 +29,14 @@ const layerControl = L.control.layers(null, weatherOverlays, { collapsed: false 
 // Chennai's roads, fetched once and cached server-side; this is the geometry later
 // flood-depth and routing features attach data to.
 
+// Magenta stands apart from the base map's own orange/yellow/white roads, so the
+// layer is visibly ours; main roads are drawn heavier than side streets.
+const STREET_WEIGHTS = { motorway: 5, trunk: 5, primary: 4, secondary: 3, tertiary: 2.5 };
+// 80k lines as SVG elements makes panning sluggish; one canvas stays responsive.
+const streetRenderer = L.canvas({ padding: 0.5 });
+const STREET_ZOOM = 15;
+const CHENNAI_CENTRE = [13.0827, 80.2707];
+
 fetch("/data-collection/streets")
     .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -36,12 +44,28 @@ fetch("/data-collection/streets")
     })
     .then((geojson) => {
         const streets = L.geoJSON(geojson, {
-            style: { color: "#616161", weight: 1.5, opacity: 0.7 },
+            renderer: streetRenderer,
+            style: (feature) => ({
+                color: "#d81b60",
+                weight: STREET_WEIGHTS[feature.properties.highway.replace("_link", "")] || 1.5,
+                opacity: 0.85,
+            }),
             onEachFeature: (feature, layer) => {
                 if (feature.properties.name) layer.bindTooltip(feature.properties.name);
             },
-        }).addTo(map);
-        layerControl.addOverlay(streets, "Streets");
+        });
+        layerControl.addOverlay(streets, "Streets (Chennai)");
+
+        // Zoomed out, the whole network merges into one blob, so ticking the layer
+        // zooms in to street level: on the selected place if it is in Chennai, else
+        // wherever the map already is in Chennai, else the city centre.
+        map.on("overlayadd", (event) => {
+            if (event.layer !== streets || map.getZoom() >= STREET_ZOOM) return;
+            const bounds = streets.getBounds();
+            const target = [marker && marker.getLatLng(), map.getCenter()]
+                .find((point) => point && bounds.contains(point)) || CHENNAI_CENTRE;
+            map.setView(target, STREET_ZOOM);
+        });
     })
     .catch((err) => console.warn("Street network unavailable:", err.message));
 
