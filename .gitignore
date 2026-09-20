@@ -3,4 +3,6 @@ certs/
 __pycache__/
 *.pyc
 .vscode/
-app/data/
+app/data/*
+# The ward index extracted from the base maps is small and the app reads it.
+!app/data/ward_sheets.json
