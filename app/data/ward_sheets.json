@@ -1,0 +1,558 @@
+{
+ "source": "Title blocks of the GCC / SECON-JBA storm water drain base maps in Ward/",
+ "note": "Ward and zone number as printed on each sheet. The zone name is GCC's own for that number: the title blocks abbreviate it inconsistently.",
+ "sheets": {
+  "N028": {
+   "ward": 28,
+   "zone": "N03",
+   "zone_roman": "III",
+   "zone_name": "Madhavaram"
+  },
+  "N029": {
+   "ward": 29,
+   "zone": "N03",
+   "zone_roman": "III",
+   "zone_name": "Madhavaram"
+  },
+  "N033": {
+   "ward": 33,
+   "zone": "N03",
+   "zone_roman": "III",
+   "zone_name": "Madhavaram"
+  },
+  "N034": {
+   "ward": 34,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N035": {
+   "ward": 35,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N036": {
+   "ward": 36,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N038": {
+   "ward": 38,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N040": {
+   "ward": 40,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N041": {
+   "ward": 41,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N043": {
+   "ward": 43,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N044": {
+   "ward": 44,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N045": {
+   "ward": 45,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N047": {
+   "ward": 47,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N048": {
+   "ward": 48,
+   "zone": "N04",
+   "zone_roman": "IV",
+   "zone_name": "Tondiarpet"
+  },
+  "N050": {
+   "ward": 50,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N053": {
+   "ward": 53,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N055": {
+   "ward": 55,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N056": {
+   "ward": 56,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N059": {
+   "ward": 59,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N061": {
+   "ward": 61,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N062": {
+   "ward": 62,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N063": {
+   "ward": 63,
+   "zone": "N05",
+   "zone_roman": "V",
+   "zone_name": "Royapuram"
+  },
+  "N066": {
+   "ward": 66,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N069": {
+   "ward": 69,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N071": {
+   "ward": 71,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N072": {
+   "ward": 72,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N073": {
+   "ward": 73,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N074": {
+   "ward": 74,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N075": {
+   "ward": 75,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N077": {
+   "ward": 77,
+   "zone": "N06",
+   "zone_roman": "VI",
+   "zone_name": "Thiru Vi Ka Nagar"
+  },
+  "N090": {
+   "ward": 90,
+   "zone": "N07",
+   "zone_roman": "VII",
+   "zone_name": "Ambattur"
+  },
+  "N093": {
+   "ward": 93,
+   "zone": "N07",
+   "zone_roman": "VII",
+   "zone_name": "Ambattur"
+  },
+  "N094": {
+   "ward": 94,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N095": {
+   "ward": 95,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N096": {
+   "ward": 96,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N097": {
+   "ward": 97,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N098": {
+   "ward": 98,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N099": {
+   "ward": 99,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N100": {
+   "ward": 100,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N103": {
+   "ward": 103,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N104": {
+   "ward": 104,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N105": {
+   "ward": 105,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N106": {
+   "ward": 106,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N107": {
+   "ward": 107,
+   "zone": "N08",
+   "zone_roman": "VIII",
+   "zone_name": "Anna Nagar"
+  },
+  "N109": {
+   "ward": 109,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N110": {
+   "ward": 110,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N111": {
+   "ward": 111,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N112": {
+   "ward": 112,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N113": {
+   "ward": 113,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N114": {
+   "ward": 114,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N115": {
+   "ward": 115,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N117": {
+   "ward": 117,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N118": {
+   "ward": 118,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N119": {
+   "ward": 119,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N120": {
+   "ward": 120,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N121": {
+   "ward": 121,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N122": {
+   "ward": 122,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N123": {
+   "ward": 123,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N124": {
+   "ward": 124,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N125": {
+   "ward": 125,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N126": {
+   "ward": 126,
+   "zone": "N09",
+   "zone_roman": "IX",
+   "zone_name": "Teynampet"
+  },
+  "N127": {
+   "ward": 127,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N128": {
+   "ward": 128,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N129": {
+   "ward": 129,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N130": {
+   "ward": 130,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N131": {
+   "ward": 131,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N132": {
+   "ward": 132,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N133": {
+   "ward": 133,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N134": {
+   "ward": 134,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N135": {
+   "ward": 135,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N136": {
+   "ward": 136,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N137": {
+   "ward": 137,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N138": {
+   "ward": 138,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N139": {
+   "ward": 139,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N140": {
+   "ward": 140,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N141": {
+   "ward": 141,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N142": {
+   "ward": 142,
+   "zone": "N10",
+   "zone_roman": "X",
+   "zone_name": "Kodambakkam"
+  },
+  "N145": {
+   "ward": 145,
+   "zone": "N11",
+   "zone_roman": "XI",
+   "zone_name": "Valasaravakkam"
+  },
+  "N160": {
+   "ward": 160,
+   "zone": "N12",
+   "zone_roman": "XII",
+   "zone_name": "Alandur"
+  },
+  "N170": {
+   "ward": 170,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N171": {
+   "ward": 171,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N172": {
+   "ward": 172,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N173": {
+   "ward": 173,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N174": {
+   "ward": 174,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N175": {
+   "ward": 175,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N176": {
+   "ward": 176,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N177": {
+   "ward": 177,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N178": {
+   "ward": 178,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N179": {
+   "ward": 179,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N180": {
+   "ward": 180,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N181": {
+   "ward": 181,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  },
+  "N182": {
+   "ward": 182,
+   "zone": "N13",
+   "zone_roman": "XIII",
+   "zone_name": "Adyar"
+  }
+ }
+}
