@@ -11,7 +11,11 @@ let marker = null;
 let accuracyCircle = null;
 
 const map = L.map("map").setView([20, 0], 2);
+
+// The class is what dark mode inverts in CSS: only the base tiles, never the weather
+// overlays drawn on top of them.
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    className: "basemap",
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);

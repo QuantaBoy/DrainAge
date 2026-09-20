@@ -7,11 +7,70 @@ const forecastBox = document.getElementById("forecast");
 
 const WEATHER_ROWS = [
     ["Condition", (w) => w.condition],
-    ["Temperature", (w) => `${w.temp_c} °C (feels ${w.feels_like_c} °C)`],
+    ["Temperature", (w) => `${w.temp_c.toFixed(1)} °C`],
+    ["Feels like", (w) => `${w.feels_like_c.toFixed(1)} °C`],
     ["Humidity", (w) => `${w.humidity_pct}%`],
     ["Wind", (w) => `${w.wind_ms} m/s`],
     ["Rain, last 1h", (w) => `${w.rain_1h_mm} mm`],
 ];
+
+// --- Weather icons ---------------------------------------------------------------
+// Drawn as SVG instead of shipped as images: they scale, follow the palette through
+// the CSS variables in their gradients, and cost no extra request.
+
+const SUN_RAYS = Array.from({ length: 8 }, (unused, i) =>
+    `<line class="wx-ray" x1="32" y1="5" x2="32" y2="12" transform="rotate(${i * 45} 32 32)"/>`).join("");
+const CLOUD = '<g class="wx-cloud"><circle cx="25" cy="31" r="11"/>' +
+    '<circle cx="38" cy="29" r="13"/><rect x="17" y="34" width="32" height="13" rx="6.5"/></g>';
+const DROPS = [22, 32, 42].map((x, i) =>
+    `<line class="wx-drop" x1="${x}" y1="${50 + (i % 2) * 3}" x2="${x - 3}" y2="${58 + (i % 2) * 3}"/>`).join("");
+
+const ICONS = {
+    clear: { label: "Clear", shapes: `${SUN_RAYS}<circle class="wx-sun" cx="32" cy="32" r="12"/>` },
+    night: { label: "Clear night", shapes: '<path class="wx-sun" d="M38 13a19 19 0 1 0 15 29A21 21 0 0 1 38 13Z"/>' },
+    partly: {
+        label: "Partly cloudy",
+        shapes: '<circle class="wx-sun" cx="41" cy="22" r="10"/>' +
+            `<g transform="translate(-2 4)">${CLOUD}</g>`,
+    },
+    cloud: { label: "Cloudy", shapes: CLOUD },
+    rain: { label: "Rain", shapes: `<g transform="translate(0 -6)">${CLOUD}</g>${DROPS}` },
+    storm: {
+        label: "Thunderstorm",
+        shapes: `<g transform="translate(0 -6)">${CLOUD}</g>` +
+            '<path class="wx-bolt" d="M34 41 24 55h7l-3 9 12-14h-8l5-9z"/>',
+    },
+};
+
+// WMO weather code, as Open-Meteo reports it for each forecast day.
+function iconForCode(code) {
+    if (code === 0) return "clear";
+    if (code <= 2) return "partly";
+    if (code <= 48) return "cloud";      // cloudy, fog
+    if (code <= 86) return "rain";       // drizzle, rain, snow, showers
+    return "storm";                      // 95+ thunderstorm
+}
+
+// OpenWeather's icon code for current conditions, e.g. "10d": condition plus day/night.
+function iconForCurrent(code) {
+    const night = String(code).endsWith("n");
+    switch (String(code).slice(0, 2)) {
+        case "01": return night ? "night" : "clear";
+        case "02": case "03": return "partly";
+        case "09": case "10": return "rain";
+        case "11": return "storm";
+        default: return "cloud";
+    }
+}
+
+function weatherIcon(kind) {
+    const icon = ICONS[kind] || ICONS.cloud;
+    const span = document.createElement("span");
+    span.className = "wx-icon";
+    // Static markup from the table above; no API text reaches this string.
+    span.innerHTML = `<svg viewBox="0 0 64 64" role="img" aria-label="${icon.label}">${icon.shapes}</svg>`;
+    return span;
+}
 
 // Requests overlap (a location fix, a map click, a search), and a slower older
 // response must not overwrite a newer one, so each panel draws only its latest request.
@@ -61,13 +120,16 @@ async function renderWeather(query, prefix) {
     // Built as nodes, not markup: every value here is third-party API text.
     const heading = document.createElement("strong");
     heading.textContent = prefix ? `${prefix}: ${where}` : where;
+    const header = document.createElement("div");
+    header.className = "wx-head";
+    header.append(heading, weatherIcon(iconForCurrent(body.icon)));
     const table = document.createElement("table");
     for (const [label, value] of WEATHER_ROWS) {
         const row = table.insertRow();
         row.insertCell().textContent = label;
         row.insertCell().textContent = value(body);
     }
-    weatherBox.replaceChildren(heading, table);
+    weatherBox.replaceChildren(header, table);
     return { body, where };
 }
 
@@ -180,6 +242,7 @@ function buildWeekTable(days) {
         row.insertCell().textContent = date.toLocaleDateString(undefined, {
             weekday: "short", day: "numeric", month: "short",
         });
+        row.insertCell().append(weatherIcon(iconForCode(day.code)));
 
         const bar = document.createElement("span");
         bar.className = "bar";
@@ -268,6 +331,10 @@ function buildTimeline(body) {
         ].filter(Boolean).join(" · ");
 
         readout.replaceChildren(when, rain, extra);
+        // The drain network reads the hour on show, so moving the slider moves the
+        // whole network with it.
+        window.rainNowMmH = step.rain;
+        window.dispatchEvent(new CustomEvent("rain-change", { detail: { mmPerHour: step.rain } }));
         [...ticks.children].forEach((tick, i) => tick.classList.toggle("on", i === index));
     };
 
