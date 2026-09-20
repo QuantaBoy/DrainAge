@@ -256,6 +256,9 @@ async def get_weather(
         "feels_like_c": data["main"]["feels_like"],
         "humidity_pct": data["main"]["humidity"],
         "condition": data["weather"][0]["description"],
+        # OpenWeather's own icon code (e.g. 10d): condition plus day/night, which the
+        # page draws its own icon from.
+        "icon": data["weather"][0]["icon"],
         "wind_ms": data["wind"]["speed"],
         "rain_1h_mm": rain_mm(data),
     }
@@ -283,8 +286,8 @@ async def get_forecast(
             {
                 "latitude": place["lat"],
                 "longitude": place["lon"],
-                "daily": "precipitation_sum,precipitation_probability_max,"
-                "temperature_2m_max",
+                "daily": "weather_code,precipitation_sum,"
+                "precipitation_probability_max,temperature_2m_max",
                 # Hourly data covers every forecast day, so the next rain can be
                 # found however far ahead it is, not just within `hours`.
                 "hourly": "precipitation,precipitation_probability,temperature_2m",
@@ -324,12 +327,15 @@ async def get_forecast(
         "days": [
             {
                 "date": date,
+                # WMO weather code, the basis for the day's icon.
+                "code": code,
                 "rain_mm": rain or 0.0,
                 "rain_chance_pct": chance,
                 "temp_max_c": temp_max,
             }
-            for date, rain, chance, temp_max in zip(
+            for date, code, rain, chance, temp_max in zip(
                 daily["time"],
+                daily["weather_code"],
                 daily["precipitation_sum"],
                 daily["precipitation_probability_max"],
                 daily["temperature_2m_max"],

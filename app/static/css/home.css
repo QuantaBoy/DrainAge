@@ -1,259 +1,650 @@
-body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; }
-button { font-size: 1rem; padding: .6rem 1.2rem; cursor: pointer; }
-.warn { color: #b3261e; font-size: .85em; }
+/* Light dashboard: top bar, forecast cards + map on the left, rain panels on the right.
+   The panels themselves are built by weather.js and layers.js, so everything below styles
+   generated DOM by class and, where noted, by column order. */
 
-#location-status { margin-top: 1rem; font-family: ui-monospace, monospace; line-height: 1.6; }
+/* Three light palettes, switched by data-palette on <html>. Only the chrome changes:
+   drain and rain-band colours are fixed in the JS because they carry meaning. */
+:root,
+:root[data-palette=monsoon] {          /* default: rain blue */
+    --bg: #eef1f6;
+    --card: #ffffff;
+    --ink: #101420;
+    --muted: #6b7488;
+    --faint: #98a0b3;
+    --line: #e7eaf2;
+    --accent: #3b6ef6;
+    --accent-2: #7aa2ff;
+    --accent-ink: #1b3fa8;
+    --accent-soft: #eaf0ff;
+    --ring: rgba(59, 110, 246, .18);
+    --danger: #c0372c;
+    --glass: rgba(255, 255, 255, .94);
+    /* Weather-icon gradients: the sun stays warm in every palette, the cloud follows
+       the surface colours so it reads on light and dark cards alike. */
+    --sun-1: #ffd75e;
+    --sun-2: #ff9f43;
+    --cloud-1: #e3e9f5;
+    --cloud-2: #b6c3da;
+    --drop: var(--accent);
+    --bolt: #ffb020;
+    --radius: 20px;
+    --radius-sm: 14px;
+    --shadow: 0 1px 2px rgba(16, 20, 32, .04), 0 12px 32px rgba(16, 20, 32, .06);
+}
 
-#district-form { margin-top: 1.5rem; display: flex; gap: .5rem; flex-wrap: wrap; }
-#district { flex: 1 1 14rem; font-size: 1rem; padding: .55rem .7rem; }
+:root[data-palette=lagoon] {           /* water teal */
+    --bg: #eaf2f0;
+    --ink: #0d1a18;
+    --muted: #5f7873;
+    --faint: #93a8a4;
+    --line: #dfeae7;
+    --accent: #0f9488;
+    --accent-2: #5ed3c2;
+    --accent-ink: #0a5b53;
+    --accent-soft: #ddf3ef;
+    --ring: rgba(15, 148, 136, .2);
+    --shadow: 0 1px 2px rgba(10, 30, 28, .04), 0 12px 32px rgba(10, 40, 36, .08);
+    --cloud-1: #e0eeea;
+    --cloud-2: #aac8c1;
+}
 
-#weather { margin-top: .75rem; }
-#weather table { border-collapse: collapse; }
-#weather td { padding: .2rem .9rem .2rem 0; }
-#weather td:first-child { color: #5f6368; }
+:root[data-palette=clay] {             /* warm terracotta */
+    --bg: #f5f0ea;
+    --ink: #1c1511;
+    --muted: #7a6a5e;
+    --faint: #a99a8d;
+    --line: #ece2d8;
+    --accent: #d2603a;
+    --accent-2: #f0a07c;
+    --accent-ink: #94381c;
+    --accent-soft: #fbeae1;
+    --ring: rgba(210, 96, 58, .2);
+    --shadow: 0 1px 2px rgba(40, 24, 16, .04), 0 12px 32px rgba(50, 30, 18, .08);
+    --cloud-1: #f0e6dc;
+    --cloud-2: #cdb7a5;
+}
 
-#forecast { margin-top: 1.25rem; }
-#forecast table { border-collapse: collapse; width: 100%; max-width: 32rem; margin-top: .4rem; }
-#forecast td { padding: .25rem .5rem .25rem 0; white-space: nowrap; }
-#forecast td:nth-child(2) { width: 45%; }
-#forecast td:nth-child(n+3) { text-align: right; color: #5f6368; }
-.bar { display: inline-block; height: .7rem; min-width: 1px; background: #4285f4;
-       border-radius: 2px; vertical-align: middle; }
+/* Dark theme: one set of dark surfaces, plus the accent each palette keeps. The
+   surfaces are near-black rather than grey so cards and map read as separate panels. */
+:root[data-theme=dark] {
+    --bg: #0c0f15;
+    --card: #161b24;
+    --ink: #f2f5fa;
+    --muted: #97a1b5;
+    --faint: #6b7386;
+    --line: #252d3b;
+    --glass: rgba(22, 27, 36, .92);
+    --cloud-1: #8c99b3;
+    --cloud-2: #4e5870;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 16px 40px rgba(0, 0, 0, .45);
+}
+:root[data-theme=dark][data-palette=monsoon] {
+    --accent: #6f93ff;
+    --accent-2: #a6bdff;
+    --accent-ink: #cfdcff;
+    --accent-soft: #1a2340;
+    --ring: rgba(111, 147, 255, .28);
+}
+:root[data-theme=dark][data-palette=lagoon] {
+    --accent: #2ec1ae;
+    --accent-2: #74e7d3;
+    --accent-ink: #a9f0e5;
+    --accent-soft: #0f2b28;
+    --ring: rgba(46, 193, 174, .28);
+}
+:root[data-theme=dark][data-palette=clay] {
+    --accent: #ef7e52;
+    --accent-2: #ffad86;
+    --accent-ink: #ffd2bb;
+    --accent-soft: #34201a;
+    --ring: rgba(239, 126, 82, .28);
+}
 
-.timeline { max-width: 32rem; margin: .6rem 0 1rem; }
-.mode-toggle { display: inline-flex; background: #1c1c1c; border-radius: 999px; padding: 3px; }
-.mode-toggle button { border: 0; background: transparent; color: #fff; border-radius: 999px;
-                      padding: .5rem 1.4rem; font-size: 1.1rem; }
-.mode-toggle button[aria-pressed=true] { background: #efefef; color: #1c1c1c;
-                                         box-shadow: inset 0 0 0 2px #1c1c1c; }
-.mode-toggle sup { font-size: .5em; margin-left: .15em; }
-.timeline-note { margin: .45rem 0 .3rem; color: #5f6368; font-size: .85rem; }
-.timeline input[type=range] { width: 100%; margin: 0; }
-.ticks { display: flex; justify-content: space-between; font-size: .72rem; color: #80868b;
-         margin-top: .15rem; }
-.ticks .on { color: #1a73e8; font-weight: 600; }
-.readout { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: baseline;
-           gap: .1rem .75rem; }
-.readout strong { flex-basis: 100%; }
-.readout-rain { font-size: 1.35rem; color: #1a73e8; }
-.readout-extra { color: #5f6368; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
-.next-rain { margin: .5rem 0 .25rem; padding: .6rem .75rem; max-width: 32rem;
-             background: #e8f0fe; border-radius: .4rem; }
-.next-rain-headline { font-size: 1.05rem; font-weight: 600; color: #174ea6; }
-.next-rain-detail { margin-top: .15rem; color: #3c4043; }
-.next-rain-note { margin-top: .15rem; font-size: .78rem; color: #5f6368; }
+body {
+    margin: 0;
+    padding: 1.5rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+}
 
-#map { height: 26rem; margin-top: 1rem; border-radius: .5rem; }
+/* --- Page grid ---------------------------------------------------------------- */
+/* #forecast is display:contents, so the heading, next-rain box, timeline and week
+   table that weather.js builds land in these areas instead of one stacked column. */
 
-.rain-control { background: #fff; padding: .45rem .6rem; font-size: .8rem; min-width: 15rem; }
-.rain-control[hidden] { display: none; }
-.rain-control-title { font-weight: 600; margin-bottom: .3rem; }
+.app {
+    max-width: 78rem;
+    margin: 0 auto;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    grid-template-areas:
+        "top    top"
+        "status status"
+        "title  rain"
+        "hero   rain"
+        "days   alert"
+        "map    alert"
+        "data   data";
+    align-content: start;
+}
+
+.topbar { grid-area: top; }
+#location-status { grid-area: status; }
+#forecast { display: contents; }
+#forecast > strong { grid-area: title; }
+#weather { grid-area: hero; }
+.forecast { grid-area: days; }
+.timeline { grid-area: rain; align-self: start; }
+.next-rain { grid-area: alert; align-self: start; }
+.map-card { grid-area: map; }
+#rain-data { grid-area: data; }
+
+#weather, .timeline, .next-rain, .map-card, #rain-data {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+/* --- Top bar ------------------------------------------------------------------ */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    padding: .7rem .9rem;
+    background: var(--card);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+}
+.brand { display: flex; align-items: center; gap: .55rem; padding-left: .4rem; }
+.brand-mark {
+    display: grid; place-items: center;
+    width: 2.1rem; height: 2.1rem;
+    border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: .8rem;
+}
+.brand h1 { margin: 0; font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+
+button { font: inherit; cursor: pointer; }
+
+.chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    border: 0; border-radius: 999px;
+    padding: .55rem 1rem;
+    background: var(--bg); color: var(--ink);
+    font-size: .85rem; font-weight: 600;
+    transition: background .2s;
+}
+.chip:hover { background: var(--accent-soft); }
+
+/* Palette swatches: each button paints itself in the palette it selects. */
+.icon-button {
+    display: grid; place-items: center;
+    width: 2.3rem; height: 2.3rem; padding: 0;
+    margin-left: auto;
+    border: 0; border-radius: 50%;
+    background: var(--bg);
+}
+.icon-button:hover { background: var(--accent-soft); }
+/* A crescent in light mode, a sun in dark: the theme the button switches to. */
+.theme-icon {
+    width: 1.05rem; height: 1.05rem; border-radius: 50%;
+    background: var(--ink);
+    box-shadow: inset -.3rem -.1rem 0 0 var(--bg);
+}
+:root[data-theme=dark] .theme-icon {
+    background: var(--sun-1);
+    box-shadow: 0 0 0 .18rem rgba(255, 215, 94, .25);
+}
+.sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+}
+
+.palette { display: flex; gap: .3rem; }
+.palette button {
+    width: 1.6rem; height: 1.6rem; padding: 0;
+    border: 2px solid transparent; border-radius: 50%;
+    background: var(--swatch);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+}
+.palette button[aria-pressed=true] { border-color: var(--ink); }
+.palette button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#district-form { flex: 1 1 18rem; display: flex; gap: .5rem; }
+#district {
+    flex: 1; min-width: 0;
+    font: inherit; font-size: .9rem;
+    padding: .6rem 1.1rem;
+    border: 1px solid transparent; border-radius: 999px;
+    background: var(--bg); color: var(--ink);
+}
+#district::placeholder { color: var(--faint); }
+#district:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--ring);
+}
+#district-form button {
+    border: 0; border-radius: 999px;
+    padding: .6rem 1.35rem;
+    background: var(--accent); color: #fff;
+    font-size: .85rem; font-weight: 700;
+    transition: background .2s;
+}
+#district-form button:hover { filter: brightness(1.08); }
+
+#location-status {
+    margin: 0; padding: 0 .4rem;
+    font-size: .8rem; line-height: 1.6;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+#location-status:empty { display: none; }
+.warn { color: var(--danger); font-size: .85em; }
+
+/* --- Weather icons ------------------------------------------------------------ */
+
+.wx-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.wx-icon { display: inline-flex; line-height: 0; }
+.wx-icon svg { width: 3rem; height: 3rem; filter: drop-shadow(0 3px 6px rgba(15, 20, 35, .22)); }
+.wx-sun { fill: url(#wxSun); }
+.wx-ray { stroke: var(--sun-2); stroke-width: 3.5; stroke-linecap: round; }
+.wx-cloud { fill: url(#wxCloud); }
+.wx-drop { stroke: var(--drop); stroke-width: 3.5; stroke-linecap: round; }
+.wx-bolt { fill: var(--bolt); }
+
+/* --- Current conditions (hero card) ------------------------------------------- */
+
+#forecast > strong {
+    align-self: end;
+    font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em;
+    padding: .25rem .4rem 0;
+}
+
+#weather { padding: 1.25rem 1.5rem; }
+#weather:empty { display: none; }
+.wx-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.wx-head strong { font-size: 1.05rem; font-weight: 700; }
+.wx-head .wx-icon svg { width: 4.2rem; height: 4.2rem; }
+#weather table { width: 100%; border-collapse: collapse; }
+#weather tr + tr { border-top: 1px solid var(--line); }
+#weather td { padding: .45rem 0; }
+#weather td:first-child {
+    color: var(--muted); font-size: .72rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em;
+}
+#weather td:last-child { text-align: right; font-weight: 600; }
+/* Row 2 is Temperature (WEATHER_ROWS order in weather.js): the headline number. */
+#weather tr:nth-child(2) td:last-child {
+    font-size: 2.1rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+}
+
+/* --- Seven-day cards ---------------------------------------------------------- */
+/* weather.js builds a table; these turn its rows into a row of cards. */
+
+.forecast { display: flex; flex-wrap: wrap; gap: .75rem; border-collapse: collapse; }
+.forecast tbody { display: contents; }
+.forecast tr {
+    flex: 1 1 6rem;
+    display: flex; flex-direction: column; align-items: center; gap: .45rem;
+    padding: 1rem .7rem;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    transition: transform .2s, box-shadow .2s;
+}
+.forecast tr:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(16, 20, 32, .1); }
+.forecast td { display: block; padding: 0; text-align: center; white-space: nowrap; }
+.forecast td:first-child {
+    color: var(--muted); font-size: .72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+}
+.forecast td:nth-child(3) {
+    width: 100%; height: .45rem;
+    background: var(--line); border-radius: 999px; overflow: hidden;
+}
+.forecast td:nth-child(4) { font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; }
+.forecast td:nth-child(5) { font-size: .78rem; font-weight: 600; color: var(--accent); }
+.forecast td:nth-child(6) { font-size: .78rem; color: var(--muted); }
+.bar {
+    display: block; height: 100%; min-width: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 999px;
+}
+
+/* --- Chance of rain (timeline) ------------------------------------------------ */
+
+.timeline { padding: 1.1rem 1.15rem 1.25rem; }
+.timeline::before {
+    content: "Chance of rain";
+    display: block; margin-bottom: .75rem;
+    font-size: 1rem; font-weight: 800; letter-spacing: -.01em;
+}
+.mode-toggle {
+    display: flex; gap: .25rem;
+    background: var(--bg); border-radius: 999px; padding: 4px;
+}
+.mode-toggle button {
+    flex: 1;
+    border: 0; border-radius: 999px;
+    padding: .45rem .5rem;
+    background: transparent; color: var(--muted);
+    font-size: .82rem; font-weight: 700;
+}
+.mode-toggle button[aria-pressed=true] {
+    background: var(--card); color: var(--ink);
+    box-shadow: 0 1px 3px rgba(16, 20, 32, .12);
+}
+:root[data-theme=dark] .mode-toggle button[aria-pressed=true] {
+    background: var(--accent-soft); color: var(--accent-ink);
+}
+.mode-toggle sup { font-size: .5em; margin-left: .15em; opacity: .6; }
+
+.timeline-note { margin: .8rem 0 .4rem; color: var(--muted); font-size: .8rem; }
+.timeline input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
+.ticks {
+    display: flex; justify-content: space-between;
+    font-size: .7rem; color: var(--faint); margin-top: .2rem;
+}
+.ticks .on { color: var(--accent); font-weight: 700; }
+
+.readout {
+    margin-top: .9rem; padding-top: .8rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem;
+}
+.readout strong { flex-basis: 100%; font-size: .8rem; color: var(--muted); font-weight: 600; }
+.readout-rain { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; color: var(--accent-ink); }
+.readout-extra { color: var(--muted); font-size: .82rem; }
+
+/* --- Next rain ---------------------------------------------------------------- */
+
+.next-rain { padding: 1rem 1.1rem; background: var(--accent-soft); box-shadow: none; }
+.next-rain-headline { font-size: 1rem; font-weight: 800; color: var(--accent-ink); }
+.next-rain-detail { margin-top: .3rem; color: var(--muted); font-size: .84rem; }
+.next-rain-note { margin-top: .4rem; font-size: .74rem; color: var(--muted); }
+
+/* --- Map ---------------------------------------------------------------------- */
+
+.map-card { padding: 1.1rem; }
+.map-card h2 { margin: 0 0 .8rem .25rem; font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+#map { height: 34rem; border-radius: var(--radius-sm); }
+
+.leaflet-container { font-family: inherit; }
+.leaflet-bar, .leaflet-control-layers, .leaflet-popup-content-wrapper {
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow) !important;
+}
+.leaflet-control-layers { padding: .5rem .65rem; font-size: .8rem; }
+.leaflet-control-layers label { display: block; }
+.leaflet-bar a:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.leaflet-bar a:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+
+:root[data-theme=dark] .basemap {
+    filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8);
+}
+:root[data-theme=dark] .leaflet-control-layers,
+:root[data-theme=dark] .leaflet-bar a,
+:root[data-theme=dark] .leaflet-popup-content-wrapper,
+:root[data-theme=dark] .leaflet-popup-tip { background: var(--card); color: var(--ink); }
+:root[data-theme=dark] .leaflet-bar a { border-bottom-color: var(--line); }
+:root[data-theme=dark] .leaflet-bar a:hover { background: var(--accent-soft); }
+:root[data-theme=dark] .leaflet-control-attribution {
+    background: rgba(0, 0, 0, .55); color: var(--muted);
+}
+:root[data-theme=dark] .leaflet-control-attribution a { color: var(--accent); }
+
+/* Rain-movement control on the map. */
+.rain-control {
+    background: var(--glass); color: var(--ink);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: .6rem .7rem; font-size: .8rem; min-width: 15rem;
+    border-radius: var(--radius-sm);
+}
+.rain-control-title { font-weight: 700; margin-bottom: .35rem; }
 .rain-control-row { display: flex; align-items: center; gap: .45rem; }
-.rain-control button { font-size: .8rem; padding: .15rem .5rem; }
-.rain-control input[type=range] { flex: 1; min-width: 5rem; }
+.rain-control button {
+    border: 0; border-radius: 999px; padding: .2rem .7rem;
+    background: var(--accent); color: #fff; font-size: .78rem; font-weight: 600;
+}
+.rain-control input[type=range] { flex: 1; min-width: 5rem; accent-color: var(--accent); }
 .rain-time { min-width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; }
-.rain-legend { display: flex; flex-wrap: wrap; gap: .15rem .6rem; margin-top: .35rem; color: #5f6368; }
-.rain-legend i { display: inline-block; width: .7rem; height: .7rem; margin-right: .25rem;
-                 border-radius: 2px; vertical-align: -1px; }
-.rain-note:not(:empty) { margin-top: .25rem; color: #5f6368; }
+.rain-legend {
+    display: flex; flex-wrap: wrap; gap: .15rem .6rem;
+    margin-top: .4rem; color: var(--muted); font-size: .72rem;
+}
+.rain-legend i {
+    display: inline-block; width: .7rem; height: .7rem; margin-right: .25rem;
+    border-radius: 3px; vertical-align: -1px;
+}
+.rain-note:not(:empty) { margin-top: .25rem; color: var(--muted); font-size: .74rem; }
 
 /* Dashes march along each drain in the direction its water runs. */
 .water-flow { stroke-dasharray: 6 10; animation: water-flow 1.2s linear infinite; }
 @keyframes water-flow { to { stroke-dashoffset: -16; } }
-@media (prefers-reduced-motion: reduce) { .water-flow { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+    .water-flow { animation: none; }
+    .forecast tr { transition: none; }
+}
 
-#rain-data { margin-top: 1rem; font-size: .85rem; }
-#rain-data h2 { font-size: 1rem; margin: 0 0 .4rem; }
-#rain-data code { font-size: .78rem; background: #f1f3f4; padding: .1rem .3rem;
-                  border-radius: 3px; word-break: break-all; }
-.rain-data-filters { margin: .3rem 0 .75rem; padding-left: 1.2rem; color: #3c4043; }
+/* --- Rain data tables --------------------------------------------------------- */
+
+#rain-data { padding: 1.25rem 1.4rem; font-size: .85rem; }
+#rain-data h2 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+#rain-data code {
+    font-size: .76rem; background: var(--bg); padding: .1rem .35rem;
+    border-radius: 5px; word-break: break-all;
+}
+.rain-data-filters { margin: .3rem 0 .9rem; padding-left: 1.2rem; color: var(--muted); }
 .rain-data-tables { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
-.rain-data-caption { font-weight: 600; margin-bottom: .25rem; }
-.rain-data-scroll { max-height: 17rem; overflow: auto; max-width: 100%;
-                    border: 1px solid #dadce0; border-radius: 4px; }
+.rain-data-caption { font-weight: 700; margin-bottom: .3rem; }
+.rain-data-scroll {
+    max-height: 17rem; overflow: auto; max-width: 100%;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
 #rain-data table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
-#rain-data th, #rain-data td { padding: .15rem .45rem; text-align: right; white-space: nowrap; }
-#rain-data thead th { position: sticky; top: 0; background: #f8f9fa; box-shadow: 0 1px 0 #dadce0; }
+#rain-data th, #rain-data td { padding: .25rem .55rem; text-align: right; white-space: nowrap; }
+#rain-data thead th {
+    position: sticky; top: 0; background: var(--bg);
+    color: var(--muted); font-weight: 600; box-shadow: 0 1px 0 var(--line);
+}
 .rain-hours tbody tr { cursor: pointer; }
-.rain-hours tbody tr:hover { background: #f1f3f4; }
-.rain-hours tbody tr.on { background: #e8f0fe; font-weight: 600; }
-.rain-matrix th { background: #f8f9fa; color: #5f6368; font-weight: 500; }
-.rain-matrix td.dry { color: #bdc1c6; }
-#rain-data details { margin-top: .75rem; }
-#rain-data pre { max-height: 16rem; overflow: auto; background: #f8f9fa; padding: .5rem;
-                 font-size: .72rem; border-radius: 4px; }
+.rain-hours tbody tr:hover { background: var(--bg); }
+.rain-hours tbody tr.on { background: var(--accent-soft); font-weight: 700; }
+.rain-matrix th { background: var(--bg); color: var(--muted); font-weight: 500; }
+.rain-matrix td.dry { color: var(--faint); }
+#rain-data details { margin-top: .9rem; }
+#rain-data pre {
+    max-height: 16rem; overflow: auto; background: var(--bg);
+    padding: .6rem; font-size: .72rem; border-radius: var(--radius-sm);
+}
 
-/* ─── Storm Water Drains ──────────────────────────────────────────────────────── */
+/* --- Storm water drains ------------------------------------------------------- */
 
 .drain-control {
-    background: rgba(255,255,255,0.92);
+    background: var(--glass); color: var(--ink);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    padding: .6rem .75rem;
-    font-size: .82rem;
-    min-width: 14rem;
-    max-width: 17rem;
-    border-radius: .6rem;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
-    border: 1px solid rgba(255,255,255,0.6);
-    transition: opacity 0.3s ease;
+    padding: .65rem .75rem;
+    font-size: .82rem; min-width: 14rem; max-width: 17rem;
+    border-radius: var(--radius-sm);
+    /* The map is shorter than this panel's full height, so it scrolls instead of
+       running off the bottom edge. */
+    max-height: 21rem; overflow-y: auto;
 }
-.drain-control[hidden] { display: none; }
-
 .drain-header {
-    display: flex;
-    align-items: center;
-    gap: .4rem;
-    margin-bottom: .5rem;
-    padding-bottom: .4rem;
-    border-bottom: 1px solid rgba(0,0,0,0.08);
+    display: flex; align-items: center; gap: .4rem;
+    margin-bottom: .5rem; padding-bottom: .45rem;
+    border-bottom: 1px solid var(--line);
 }
 .drain-icon { font-size: 1.15rem; }
-.drain-title { font-weight: 700; font-size: .92rem; color: #1a237e; }
-
-.drain-filters {
-    display: flex;
-    flex-direction: column;
-    gap: .35rem;
-}
+.drain-title { font-weight: 800; font-size: .9rem; color: var(--accent-ink); }
+.drain-filters { display: flex; flex-direction: column; gap: .35rem; }
 .drain-label {
-    display: flex;
-    flex-direction: column;
-    font-size: .72rem;
-    font-weight: 600;
-    color: #5f6368;
-    text-transform: uppercase;
-    letter-spacing: .04em;
+    display: flex; flex-direction: column;
+    font-size: .7rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
 }
 .drain-label select {
-    margin-top: .15rem;
-    padding: .3rem .4rem;
-    font-size: .8rem;
-    border: 1px solid #dadce0;
-    border-radius: .35rem;
-    background: #fff;
-    color: #202124;
-    cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    margin-top: .2rem; padding: .35rem .45rem;
+    font: inherit; font-size: .8rem;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--ink); cursor: pointer;
 }
 .drain-label select:focus {
-    outline: none;
-    border-color: #1565c0;
-    box-shadow: 0 0 0 3px rgba(21,101,192,0.15);
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--ring);
 }
-
 .drain-status-text {
-    margin-top: .4rem;
-    font-size: .78rem;
-    color: #3c4043;
-    font-weight: 500;
-    padding: .25rem .4rem;
-    background: rgba(25,118,210,0.06);
-    border-radius: .3rem;
+    margin-top: .45rem; padding: .3rem .45rem;
+    font-size: .78rem; font-weight: 600; color: var(--accent-ink);
+    background: var(--accent-soft); border-radius: 10px;
 }
-
 .drain-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .15rem .5rem;
-    margin-top: .4rem;
-    padding-top: .35rem;
-    border-top: 1px solid rgba(0,0,0,0.06);
-    font-size: .72rem;
-    color: #5f6368;
+    display: flex; flex-wrap: wrap; gap: .15rem .5rem;
+    margin-top: .45rem; padding-top: .4rem;
+    border-top: 1px solid var(--line);
+    font-size: .72rem; color: var(--muted);
 }
-.drain-legend-item {
-    display: flex;
-    align-items: center;
-    gap: .2rem;
-}
+.drain-legend-item { display: flex; align-items: center; gap: .2rem; }
 .drain-swatch {
-    display: inline-block;
-    width: .65rem;
-    height: .65rem;
-    border-radius: 2px;
-    border: 1px solid rgba(0,0,0,0.1);
+    display: inline-block; width: .65rem; height: .65rem;
+    border-radius: 3px; border: 1px solid rgba(0, 0, 0, .1);
 }
 
-/* ─── Drain Popup ─────────────────────────────────────────────────────────────── */
-
-.drain-popup-container .leaflet-popup-content-wrapper {
-    border-radius: .6rem;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-    padding: 0;
-    overflow: hidden;
-}
+.drain-popup-container .leaflet-popup-content-wrapper { padding: 0; overflow: hidden; }
 .drain-popup-container .leaflet-popup-content {
-    margin: 0;
-    min-width: 260px;
+    margin: 0; min-width: 260px;
+    /* The report is longer than most maps are tall, so it scrolls inside the popup
+       instead of running off both ends of the map. */
+    max-height: 24rem; overflow-y: auto;
 }
-.drain-popup-container .leaflet-popup-tip {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+.drain-popup-record { border-top: 1px solid var(--line); }
+.drain-popup-record summary {
+    padding: .45rem .75rem; cursor: pointer;
+    font-size: .68rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); background: var(--bg);
 }
-
-.drain-popup {
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: .82rem;
-}
+.drain-popup { font-family: inherit; font-size: .82rem; }
 .drain-popup-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: .6rem .75rem .4rem;
-    background: linear-gradient(135deg, #1a237e 0%, #1565c0 100%);
-    color: #fff;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .65rem .8rem .5rem;
+    background: var(--accent-soft); color: var(--accent-ink);
 }
 .drain-popup-title {
-    font-weight: 700;
-    font-size: .95rem;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-weight: 800; font-size: .92rem; max-width: 200px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .drain-popup-badge {
-    padding: .15rem .5rem;
-    border-radius: 999px;
-    font-size: .68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .04em;
+    padding: .15rem .55rem; border-radius: 999px;
+    font-size: .66rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .05em;
 }
-.drain-popup-badge.good {
-    background: rgba(46,125,50,0.2);
-    color: #c8e6c9;
-    border: 1px solid rgba(46,125,50,0.4);
-}
-.drain-popup-badge.bad {
-    background: rgba(198,40,40,0.25);
-    color: #ffcdd2;
-    border: 1px solid rgba(198,40,40,0.4);
-}
-.drain-popup-id {
-    padding: .25rem .75rem;
-    font-size: .7rem;
-    color: #90a4ae;
-    background: #263238;
-}
-.drain-popup-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .78rem;
-}
-.drain-popup-table tr { border-bottom: 1px solid #f0f0f0; }
-.drain-popup-table tr:last-child { border-bottom: none; }
-.drain-popup-table td { padding: .3rem .75rem; }
-.drain-popup-key {
-    color: #78909c;
-    font-weight: 500;
-    white-space: nowrap;
-    width: 42%;
-}
-.drain-popup-table tr:nth-child(even) { background: #fafafa; }
-.drain-popup-table tr:hover { background: #e3f2fd; }
+.drain-popup-badge.good { background: #dff3e4; color: #1b6b36; }
+.drain-popup-badge.bad { background: #fde4e1; color: #a02a20; }
+.drain-popup-id { padding: .3rem .8rem; font-size: .7rem; color: var(--muted); background: var(--bg); }
+.drain-popup-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.drain-popup-table tr + tr { border-top: 1px solid var(--line); }
+.drain-popup-table td { padding: .32rem .8rem; }
+.drain-popup-key { color: var(--muted); font-weight: 600; white-space: nowrap; width: 42%; }
+.drain-popup-table tr:hover { background: var(--accent-soft); }
 
+/* Hover card: the drain's section, its capacity and what the rain is doing to it. */
+.drain-tooltip.leaflet-tooltip {
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--glass);
+    color: var(--ink);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    white-space: normal;
+    width: max-content;
+    max-width: 23rem;
+}
+.drain-tooltip.leaflet-tooltip::before { display: none; }   /* no arrow on a card this size */
+
+.drain-tip { font-size: .76rem; }
+.drain-tip-head {
+    display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+    padding: .45rem .6rem;
+    font-weight: 800; font-size: .82rem;
+    border-bottom: 1px solid var(--line);
+}
+.drain-tip-band {
+    padding: .1rem .45rem; border-radius: 999px;
+    color: #fff; font-size: .62rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.drain-tip table { width: 100%; border-collapse: collapse; }
+.drain-tip td { padding: .18rem .6rem; vertical-align: top; }
+.drain-tip td:first-child { color: var(--muted); white-space: nowrap; }
+.drain-tip td:last-child { text-align: right; white-space: nowrap; }
+.drain-tip-foot {
+    padding: .3rem .6rem .45rem;
+    color: var(--faint); font-size: .68rem;
+    border-top: 1px solid var(--line);
+}
+
+.drain-popup-flag {
+    margin: .4rem .6rem 0;
+    padding: .35rem .5rem;
+    font-size: .72rem; font-weight: 600;
+    color: #8a4b00; background: #fff4e0;
+    border-radius: 8px;
+}
+:root[data-theme=dark] .drain-popup-flag { color: #ffd9a0; background: #33250f; }
+
+/* Click-through report inside the popup. */
+.drain-popup-section {
+    padding: .45rem .75rem .25rem;
+    font-size: .68rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted);
+    background: var(--bg);
+}
+.drain-popup-hydro { font-size: .78rem; }
+.drain-popup-source { padding: .4rem .75rem .6rem; font-size: .72rem; }
+.drain-popup-source summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
+.drain-popup-source dl { margin: .4rem 0 0; }
+.drain-popup-source dt { font-weight: 700; margin-top: .3rem; }
+.drain-popup-source dd { margin: 0; color: var(--muted); }
+
+/* Network state, under the drain filters. */
+.drain-stat-line { font-size: .74rem; color: var(--ink); }
+.drain-stat-alert {
+    margin-top: .2rem; padding: .2rem .4rem;
+    font-size: .74rem; font-weight: 700;
+    color: #fff; background: #c62828; border-radius: 8px;
+}
 
 /* Flow-direction arrowhead on a drain, as on the GCC storm water drain base maps. */
-.drain-arrow { display: flex; align-items: center; justify-content: center;
-               font-size: 13px; line-height: 1; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+.drain-arrow {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1; text-shadow: 0 0 2px #fff, 0 0 2px #fff;
+}
+
+/* --- Narrow screens ----------------------------------------------------------- */
+
+@media (max-width: 62rem) {
+    body { padding: .9rem; }
+    .app {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "top" "status" "title" "hero" "days" "rain" "map" "alert" "data";
+    }
+    .topbar { border-radius: var(--radius); }
+    #map { height: 22rem; }
+}
