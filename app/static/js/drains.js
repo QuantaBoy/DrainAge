@@ -39,7 +39,7 @@ const COLOR_MODES = [
     ["condition", "Condition"],
 ];
 
-// How full a drain is running, in the same bands as app/hydraulics.py.
+// How full a drain is running, in the same bands as app/services/hydraulics.py.
 const LOAD_COLORS = {
     clear: "#1b8f4d",
     filling: "#e0a200",
@@ -92,6 +92,9 @@ function opt(value, label) {
 
 // ─── Drain layer & renderer ────────────────────────────────────────────────────
 
+// The drain whose hover card is showing, so a new one can close it.
+let openTooltipLayer = null;
+
 const drainRenderer = L.canvas({ padding: 0.5 });
 const drainLayer = L.layerGroup();
 const arrowLayer = L.layerGroup().addTo(drainLayer);
@@ -113,7 +116,7 @@ function rainNow() {
     return Number(window.rainNowMmH) || 0;
 }
 
-// The Rational method, exactly as app/hydraulics.rational_inflow does it.
+// The Rational method, exactly as app/services/hydraulics.rational_inflow does it.
 function liveLoad(p) {
     const catchment = p.CATCH_M2 || 0;
     const inflow = drainState.runoffCoeff * rainNow() * catchment / 3.6e6;
@@ -142,7 +145,8 @@ function esc(value) {
 // ─── Filter panel (Leaflet Control, top-right) ─────────────────────────────────
 
 const drainUi = (() => {
-    const container = el("div", "drain-control leaflet-bar");
+    const dock = document.getElementById("drain-panel");
+    const container = el("div", dock ? "drain-control docked" : "drain-control leaflet-bar");
     container.hidden = true;
 
     // Header
@@ -195,11 +199,16 @@ const drainUi = (() => {
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
 
-    const DrainControl = L.Control.extend({
-        options: { position: "topright" },
-        onAdd: () => container,
-    });
-    new DrainControl().addTo(map);
+    if (dock) {
+        dock.append(container);
+    } else {
+        // No dock on the page: fall back to a floating control on the map.
+        const DrainControl = L.Control.extend({
+            options: { position: "topright" },
+            onAdd: () => container,
+        });
+        new DrainControl().addTo(map);
+    }
 
     return { container, zoneSelect, wardSelect, typeSelect, statusSelect, colorSelect, status, legend };
 })();
@@ -539,6 +548,13 @@ async function loadDrains() {
             layer.bindTooltip(() => drainTooltip(layer.feature.properties),
                 { sticky: true, className: "drain-tooltip", direction: "auto" });
             layer.on("popupopen", () => fillHydraulics(layer));
+            // Leaflet leaves a hover card open if the pointer leaves a line while it
+            // is being redrawn, which stacks cards over the map. Only the newest one
+            // is kept.
+            layer.on("tooltipopen", () => {
+                if (openTooltipLayer && openTooltipLayer !== layer) openTooltipLayer.closeTooltip();
+                openTooltipLayer = layer;
+            });
 
             // Highlight on hover
             layer.on("mouseover", () => {
@@ -585,10 +601,10 @@ async function refreshSummary() {
     }
     drainState.summary = summary;
 
-    const where = [
-        drainUi.zoneSelect.value ? zoneLabel(drainUi.zoneSelect.value) : "all zones",
-        drainUi.wardSelect.value ? wardLabel(drainUi.wardSelect.value) : null,
-    ].filter(Boolean).join(" · ");
+    // The narrower filter is the one worth naming.
+    const where = drainUi.wardSelect.value ? wardOptionLabel(drainUi.wardSelect.value)
+        : drainUi.zoneSelect.value ? zoneLabel(drainUi.zoneSelect.value)
+        : "all zones";
 
     drainUi.status.replaceChildren(
         el("div", "drain-stat-line",
@@ -601,7 +617,8 @@ async function refreshSummary() {
             `${summary.catchment_km2} km² at ${fmt(summary.rain_mm_h, 1)} mm/h`),
         el("div", summary.overloaded ? "drain-stat-alert" : "drain-stat-line",
             summary.overloaded
-                ? `${summary.overloaded.toLocaleString()} drains over capacity, ` +
+                ? `${summary.overloaded.toLocaleString()} ` +
+                  `${summary.overloaded === 1 ? "drain" : "drains"} over capacity, ` +
                   `spilling ${fmt(summary.spill_m3s, 1)} m³/s` +
                   (summary.worst[0] ? ` · worst ${summary.worst[0].street || "unnamed"} ` +
                       `at ${Math.round(summary.worst[0].load_pct)}%` : "")
@@ -668,11 +685,13 @@ renderLegend();
 map.on("overlayadd", (event) => {
     if (event.layer !== drainLayer) return;
     drainUi.container.hidden = false;
+    document.getElementById("drain-panel")?.removeAttribute("hidden");
     loadDrainFilters().then(loadDrains);
 });
 map.on("overlayremove", (event) => {
     if (event.layer !== drainLayer) return;
     drainUi.container.hidden = true;
+    document.getElementById("drain-panel")?.setAttribute("hidden", "");
     drainState.request++;
 });
 
