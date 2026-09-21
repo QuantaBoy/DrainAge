@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SIH26085{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+    {% block head %}{% endblock %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}">
+    <!-- Before first paint, so a remembered palette or theme does not flash the default. -->
+    <script>
+        (() => {
+            const root = document.documentElement;
+            const stored = (key) => { try { return localStorage.getItem(key); } catch (err) { return null; } };
+            root.dataset.palette = stored("palette") || "monsoon";
+            root.dataset.theme = stored("theme") ||
+                (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        })();
+    </script>
+</head>
+<body>
+{% block defs %}{% endblock %}
+
+<div class="{% block shell %}app{% endblock %}">
+
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark" aria-hidden="true">◆</span>
+            <span class="brand-name">SIH26085</span>
+        </a>
+
+        {% set path = request.url.path %}
+        <nav class="nav" aria-label="Primary">
+            <a href="/" {% if path == "/" %}aria-current="page"{% endif %}>Dashboard</a>
+            <a href="/resources" {% if path.startswith("/resources") %}aria-current="page"{% endif %}>Resources</a>
+        </nav>
+
+        {% block controls %}{% endblock %}
+
+        <button id="theme-toggle" class="icon-button" type="button" aria-pressed="false">
+            <span class="theme-icon" aria-hidden="true"></span>
+            <span class="sr-only">Dark theme</span>
+        </button>
+
+        <div class="palette" role="group" aria-label="Colour palette">
+            <button type="button" data-palette="monsoon" style="--swatch: #3b6ef6"
+                    aria-label="Monsoon blue"></button>
+            <button type="button" data-palette="lagoon" style="--swatch: #0f9488"
+                    aria-label="Lagoon teal"></button>
+            <button type="button" data-palette="clay" style="--swatch: #d2603a"
+                    aria-label="Clay terracotta"></button>
+        </div>
+    </header>
+
+    {% block content %}{% endblock %}
+
+</div>
+
+{% block scripts %}{% endblock %}
+<script src="{{ url_for('static', path='js/theme.js') }}"></script>
+</body>
+</html>

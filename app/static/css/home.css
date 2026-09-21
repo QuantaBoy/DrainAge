@@ -130,7 +130,8 @@ body {
         "title  rain"
         "hero   rain"
         "days   alert"
-        "map    alert"
+        "map    drains"
+        "map    flood"
         "data   data";
     align-content: start;
 }
@@ -144,6 +145,8 @@ body {
 .timeline { grid-area: rain; align-self: start; }
 .next-rain { grid-area: alert; align-self: start; }
 .map-card { grid-area: map; }
+#drain-panel { grid-area: drains; align-self: start; }
+#flood-panel { grid-area: flood; align-self: start; }
 #rain-data { grid-area: data; }
 
 #weather, .timeline, .next-rain, .map-card, #rain-data {
@@ -172,7 +175,20 @@ body {
     background: var(--accent); color: #fff;
     font-size: .8rem;
 }
-.brand h1 { margin: 0; font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+.brand { text-decoration: none; color: inherit; }
+.brand-name { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+
+.nav { display: flex; gap: .25rem; }
+.nav a {
+    padding: .5rem .95rem; border-radius: 999px;
+    color: var(--muted); font-size: .85rem; font-weight: 700; text-decoration: none;
+    transition: background .2s, color .2s;
+}
+.nav a:hover { background: var(--bg); color: var(--ink); }
+.nav a[aria-current=page] { background: var(--accent-soft); color: var(--accent-ink); }
+.nav a:focus-visible, .brand:focus-visible, .ward-map:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 button { font: inherit; cursor: pointer; }
 
@@ -377,7 +393,7 @@ button { font: inherit; cursor: pointer; }
 
 .map-card { padding: 1.1rem; }
 .map-card h2 { margin: 0 0 .8rem .25rem; font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
-#map { height: 34rem; border-radius: var(--radius-sm); }
+#map { height: 42rem; border-radius: var(--radius-sm); }
 
 .leaflet-container { font-family: inherit; }
 .leaflet-bar, .leaflet-control-layers, .leaflet-popup-content-wrapper {
@@ -479,10 +495,23 @@ button { font: inherit; cursor: pointer; }
     padding: .65rem .75rem;
     font-size: .82rem; min-width: 14rem; max-width: 17rem;
     border-radius: var(--radius-sm);
-    /* The map is shorter than this panel's full height, so it scrolls instead of
-       running off the bottom edge. */
+    /* Floating over the map it would run off the bottom edge, so it scrolls. */
     max-height: 21rem; overflow-y: auto;
 }
+.drain-control.docked {
+    max-width: none; max-height: none; overflow: visible;
+    padding: 1.1rem 1.15rem 1.25rem;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    font-size: .85rem;
+}
+.docked .drain-title { font-size: 1rem; }
+.docked .drain-filters { gap: .6rem; }
+.docked .drain-label select { padding: .5rem .55rem; font-size: .85rem; }
+.docked .drain-status-text { margin-top: .75rem; padding: .5rem .6rem; }
+.docked .drain-legend { margin-top: .6rem; padding-top: .55rem; }
 .drain-header {
     display: flex; align-items: center; gap: .4rem;
     margin-bottom: .5rem; padding-bottom: .45rem;
@@ -561,6 +590,99 @@ button { font: inherit; cursor: pointer; }
 .drain-popup-key { color: var(--muted); font-weight: 600; white-space: nowrap; width: 42%; }
 .drain-popup-table tr:hover { background: var(--accent-soft); }
 
+/* Flood nowcast panel: the clock for the next three hours. */
+.flood-panel {
+    padding: 1.1rem 1.15rem 1.25rem;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    font-size: .85rem;
+}
+.flood-note { margin: .5rem 0 .75rem; color: var(--muted); font-size: .76rem; }
+.flood-clock { font-size: 1.05rem; font-weight: 800; letter-spacing: -.01em; }
+.flood-slider { width: 100%; margin: .45rem 0 .1rem; accent-color: var(--accent); }
+.flood-stats { margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+
+/* --- Resources page ----------------------------------------------------------- */
+
+.page { max-width: 78rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+
+.res-head { padding: .75rem .4rem 0; }
+.res-head h1 { margin: 0 0 .3rem; font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; }
+.res-head p { margin: 0; max-width: 46rem; color: var(--muted); }
+
+.res-tools {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    padding: .7rem .9rem;
+    background: var(--card); border-radius: 999px; box-shadow: var(--shadow);
+}
+#ward-search, #ward-zone {
+    font: inherit; font-size: .88rem;
+    padding: .55rem 1rem;
+    border: 1px solid transparent; border-radius: 999px;
+    background: var(--bg); color: var(--ink);
+}
+#ward-search { flex: 1 1 14rem; min-width: 0; }
+#ward-search::placeholder { color: var(--faint); }
+#ward-search:focus, #ward-zone:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring);
+}
+.res-check {
+    display: inline-flex; align-items: center; gap: .45rem;
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.res-check input { accent-color: var(--accent); width: 1rem; height: 1rem; }
+#ward-count {
+    margin-left: auto; padding-right: .4rem;
+    color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums;
+}
+
+.ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
+.ward-card {
+    display: flex; flex-direction: column; gap: .7rem;
+    padding: 1.1rem 1.15rem;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    transition: transform .2s;
+}
+.ward-card:hover { transform: translateY(-2px); }
+.ward-top { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+.ward-label {
+    font-size: .66rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.ward-no { font-size: 2.1rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; }
+.ward-zone { margin-top: -.3rem; font-size: .8rem; color: var(--muted); }
+.ward-badge {
+    padding: .15rem .55rem; border-radius: 999px;
+    font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+}
+.ward-badge.has { background: var(--accent-soft); color: var(--accent-ink); }
+.ward-badge.none { background: var(--bg); color: var(--faint); }
+.ward-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .75rem;
+    margin: 0; padding-top: .75rem; border-top: 1px solid var(--line);
+}
+.ward-stats dt {
+    font-size: .64rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
+.ward-stats dd { margin: 0; font-size: 1.02rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ward-none { margin: 0; padding-top: .75rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--muted); }
+.ward-flag {
+    margin: 0; padding: .35rem .5rem;
+    font-size: .72rem; font-weight: 600;
+    color: #8a4b00; background: #fff4e0; border-radius: 8px;
+}
+:root[data-theme=dark] .ward-flag { color: #ffd9a0; background: #33250f; }
+.ward-map {
+    margin-top: auto; padding: .55rem; text-align: center;
+    border-radius: 999px; background: var(--accent); color: #fff;
+    font-size: .82rem; font-weight: 700; text-decoration: none;
+}
+.ward-map:hover { filter: brightness(1.08); }
+.ward-nomap { margin-top: auto; padding: .55rem; text-align: center; font-size: .8rem; color: var(--faint); }
+.ward-empty { grid-column: 1 / -1; margin: 0; padding: 2.5rem 1rem; text-align: center; color: var(--muted); }
+
 /* Hover card: the drain's section, its capacity and what the rain is doing to it. */
 .drain-tooltip.leaflet-tooltip {
     padding: 0;
@@ -624,7 +746,8 @@ button { font: inherit; cursor: pointer; }
 .drain-popup-source dd { margin: 0; color: var(--muted); }
 
 /* Network state, under the drain filters. */
-.drain-stat-line { font-size: .74rem; color: var(--ink); }
+.drain-stat-line { font-size: .76rem; color: var(--ink); }
+.drain-stat-line + .drain-stat-line { margin-top: .2rem; }
 .drain-stat-alert {
     margin-top: .2rem; padding: .2rem .4rem;
     font-size: .74rem; font-weight: 700;
@@ -643,8 +766,10 @@ button { font: inherit; cursor: pointer; }
     body { padding: .9rem; }
     .app {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-areas: "top" "status" "title" "hero" "days" "rain" "map" "alert" "data";
+        grid-template-areas:
+            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "flood" "data";
     }
     .topbar { border-radius: var(--radius); }
-    #map { height: 22rem; }
+    /* On one column the map gets the screen, not a letterbox. */
+    #map { height: 70vh; min-height: 24rem; }
 }
