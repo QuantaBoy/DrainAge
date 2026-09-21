@@ -18,12 +18,14 @@ ROOT_DIR = BASE_DIR.parent
 sys.path.insert(0, str(ROOT_DIR))
 load_dotenv(ROOT_DIR / ".env")
 
-from app.routes import drains, streets, weather  # noqa: E402
+from app.routes import drains, flood, resources, streets, weather  # noqa: E402
 
 app = FastAPI()
 app.include_router(weather.router)
 app.include_router(streets.router)
 app.include_router(drains.router)
+app.include_router(flood.router)
+app.include_router(resources.router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -31,6 +33,11 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def home(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "home.html")
+
+
+@app.get("/resources", response_class=HTMLResponse, include_in_schema=False)
+async def resources_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "resources.html")
 
 
 if __name__ == "__main__":

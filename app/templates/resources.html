@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Resources · SIH26085{% endblock %}
+{% block shell %}page{% endblock %}
+
+{% block content %}
+    <section class="res-head">
+        <h1>Resources</h1>
+        <p>The wards behind the model. Each card is one ward of the Greater Chennai Corporation:
+           the figures come from the drain survey and the hydraulic model, and the base map
+           opens the GCC / SECON-JBA storm water drain sheet the survey was digitised from.</p>
+    </section>
+
+    <section class="res-tools" aria-label="Filter wards">
+        <input id="ward-search" type="search" placeholder="Search ward number or zone name"
+               aria-label="Search wards" autocomplete="off">
+        <select id="ward-zone" aria-label="Zone">
+            <option value="">All zones</option>
+        </select>
+        <label class="res-check">
+            <input id="ward-map-only" type="checkbox" checked> Base map only
+        </label>
+        <span id="ward-count" aria-live="polite"></span>
+    </section>
+
+    <section id="ward-grid" class="ward-grid" aria-label="Wards">
+        <p class="ward-empty">Loading wards…</p>
+    </section>
+{% endblock %}
+
+{% block scripts %}
+    <script src="{{ url_for('static', path='js/resources.js') }}"></script>
+{% endblock %}

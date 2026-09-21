@@ -1,26 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIH26085 · Chennai Rain &amp; Drains</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+{% extends "base.html" %}
+
+{% block title %}SIH26085 · Chennai Rain &amp; Drains{% endblock %}
+
+{% block head %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}">
-    <!-- Before first paint, so a remembered palette or theme does not flash the default. -->
-    <script>
-        const root = document.documentElement;
-        const stored = (key) => { try { return localStorage.getItem(key); } catch (err) { return null; } };
-        root.dataset.palette = stored("palette") || "monsoon";
-        root.dataset.theme = stored("theme") ||
-            (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    </script>
-</head>
-<body>
+{% endblock %}
+
+{% block defs %}
 <!-- One set of icon gradients for every weather icon on the page; their stops read the
      palette variables, so the icons change with the theme. -->
 <svg class="wx-defs" width="0" height="0" aria-hidden="true" focusable="false">
@@ -35,15 +22,9 @@
         </linearGradient>
     </defs>
 </svg>
+{% endblock %}
 
-<div class="app">
-
-    <header class="topbar">
-        <div class="brand">
-            <span class="brand-mark" aria-hidden="true">◆</span>
-            <h1>SIH26085</h1>
-        </div>
-
+{% block controls %}
         <button id="use-location" class="chip" type="button">
             <span aria-hidden="true">📍</span> Use My Location
         </button>
@@ -54,21 +35,10 @@
                    required minlength="2" maxlength="80" autocomplete="address-level2">
             <button type="submit">Get Weather</button>
         </form>
+{% endblock %}
 
-        <button id="theme-toggle" class="icon-button" type="button" aria-pressed="false">
-            <span class="theme-icon" aria-hidden="true"></span>
-            <span class="sr-only">Dark theme</span>
-        </button>
-
-        <div class="palette" role="group" aria-label="Colour palette">
-            <button type="button" data-palette="monsoon" style="--swatch: #3b6ef6"
-                    aria-label="Monsoon blue"></button>
-            <button type="button" data-palette="lagoon" style="--swatch: #0f9488"
-                    aria-label="Lagoon teal"></button>
-            <button type="button" data-palette="clay" style="--swatch: #d2603a"
-                    aria-label="Clay terracotta"></button>
-        </div>
-    </header>
+{% block content %}
+    <h1 class="sr-only">Chennai rain and drainage dashboard</h1>
 
     <p id="location-status" aria-live="polite"></p>
 
@@ -80,10 +50,16 @@
         <div id="map"></div>
     </section>
 
+    <!-- drains.js docks its filter panel here. Off the map, it stops covering the
+         city and stops fighting the layer control for the same corner. -->
+    <aside id="drain-panel" aria-label="Storm water drain filters"></aside>
+    <aside id="flood-panel" aria-label="Flood nowcast" hidden></aside>
+
     <section id="rain-data" hidden></section>
 
-</div>
+{% endblock %}
 
+{% block scripts %}
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <!-- Order matters: location.js creates the map that layers.js and weather.js use. -->
@@ -91,37 +67,5 @@
     <script src="{{ url_for('static', path='js/layers.js') }}"></script>
     <script src="{{ url_for('static', path='js/weather.js') }}"></script>
     <script src="{{ url_for('static', path='js/drains.js') }}"></script>
-    <script>
-        // The palette is one attribute on <html>; every colour token follows it.
-        (() => {
-            const buttons = document.querySelectorAll(".palette button");
-            const paint = (name) => {
-                document.documentElement.dataset.palette = name;
-                for (const button of buttons) {
-                    button.setAttribute("aria-pressed", String(button.dataset.palette === name));
-                }
-            };
-            for (const button of buttons) {
-                button.addEventListener("click", () => {
-                    paint(button.dataset.palette);
-                    try { localStorage.setItem("palette", button.dataset.palette); } catch (err) {}
-                });
-            }
-            paint(document.documentElement.dataset.palette);
-
-            // Light and dark share one set of tokens; only this attribute changes.
-            const toggle = document.getElementById("theme-toggle");
-            const light = (on) => {
-                document.documentElement.dataset.theme = on ? "dark" : "light";
-                toggle.setAttribute("aria-pressed", String(on));
-            };
-            toggle.addEventListener("click", () => {
-                const dark = document.documentElement.dataset.theme !== "dark";
-                light(dark);
-                try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch (err) {}
-            });
-            light(document.documentElement.dataset.theme === "dark");
-        })();
-    </script>
-</body>
-</html>
+    <script src="{{ url_for('static', path='js/flood.js') }}"></script>
+{% endblock %}
