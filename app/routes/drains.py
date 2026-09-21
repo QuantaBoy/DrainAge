@@ -7,7 +7,7 @@ Data is parsed once on first request and cached in memory.
 On top of the survey, each drain gets its hydraulic capacity (what the built
 section can carry) and the catchment that reaches it through the network; with a
 rainfall figure those become the hydrodynamic state of the drain right now. The
-physics lives in app/hydraulics.py.
+physics lives in app/services/hydraulics.py.
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app import hydraulics
+from app.services import hydraulics
 
 router = APIRouter(prefix="/data-collection", tags=["Drains"])
 
@@ -184,7 +184,7 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
     """
     runs = [drain["coords"][::-1] if drain["flow"] == "reverse" else drain["coords"]
             for drain in drains]
-    node_ids = hydraulics.snap_nodes(runs)
+    node_ids, node_points = hydraulics.snap_nodes(runs)
 
     edges = []
     for drain, nodes in zip(drains, node_ids):
@@ -199,8 +199,12 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
             "tail": tail if _valid_invert(tail) else None,
         })
 
-    for drain, catchment in zip(drains, hydraulics.accumulate(edges)):
+    for drain, nodes, catchment in zip(drains, node_ids, hydraulics.accumulate(edges)):
         drain["catchment_m2"] = catchment
+        # Where this drain hands its water on, and so where it comes back up when it
+        # cannot take any more.
+        drain["outlet_node"] = nodes[-1]
+        drain["outlet"] = node_points[nodes[-1]]
 
 
 def flow_direction(invert_start: Any, invert_end: Any) -> str:

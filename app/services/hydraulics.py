@@ -168,7 +168,7 @@ def rational_inflow(catchment_m2: float, rain_mm_h: float, coeff: float = RUNOFF
 
 
 def snap_nodes(polylines: list[list[list[float]]],
-               tolerance_deg: float = SNAP_DEG) -> list[list[int]]:
+               tolerance_deg: float = SNAP_DEG) -> tuple[list[list[int]], list[list[float]]]:
     """Give every vertex of every drain a shared junction id.
 
     A vertex joins the nearest existing node within the tolerance, so two drains that
@@ -178,6 +178,10 @@ def snap_nodes(polylines: list[list[list[float]]],
 
     Every vertex is indexed, not only the two ends, because a side drain usually
     joins a trunk part-way along it rather than at the trunk's own start or end.
+
+    Returns the node id of every vertex, drain by drain, and where each node is: a
+    junction is a manhole, and that is where a surcharged drain puts water on the
+    street.
     """
     cells: dict[tuple[int, int], list[int]] = defaultdict(list)
     nodes: list[list[float]] = []
@@ -201,7 +205,7 @@ def snap_nodes(polylines: list[list[list[float]]],
                 cells[cell].append(best)
             line_ids.append(best)
         ids.append(line_ids)
-    return ids
+    return ids, nodes
 
 
 def accumulate(edges: list[dict[str, Any]]) -> list[float]:
@@ -412,9 +416,13 @@ if __name__ == "__main__":
     ]
     assert accumulate(tee) == [140.0, 40.0]
     # Vertices metres apart snap to one junction; a grid would have split them.
-    ids = snap_nodes([[[80.2, 13.05], [80.2001, 13.0501]], [[80.20005, 13.05005], [80.3, 13.1]]])
+    ids, points = snap_nodes([[[80.2, 13.05], [80.2001, 13.0501]],
+                              [[80.20005, 13.05005], [80.3, 13.1]]])
     assert ids[0][0] == ids[1][0], ids
     assert ids[0][1] != ids[1][1]
+    # Every node id indexes a real position, which is what the flood model pours at.
+    assert len(points) == len({i for line in ids for i in line})
+    assert points[ids[0][0]][0] == 80.2
 
     assert load_band(0.2) == "clear" and load_band(0.9) == "at capacity"
     assert load_band(1.4) == "overflowing"
