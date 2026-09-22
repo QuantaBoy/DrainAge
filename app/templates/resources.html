@@ -11,6 +11,70 @@
            opens the GCC / SECON-JBA storm water drain sheet the survey was digitised from.</p>
     </section>
 
+    <section class="src" aria-labelledby="src-title">
+        <h2 id="src-title">Data sources, and what each was checked against</h2>
+        <p class="src-lead">Every layer the model runs on is real data from a named source. Each one
+           was cross-checked against a second, independent source before it was used, and where two
+           sources disagree the site reports the disagreement rather than quietly picking one.</p>
+
+        <ul class="src-grid">
+            <li class="src-card">
+                <h3>Terrain <span>DEM</span></h3>
+                <p class="src-from">GEDTM30, 1 arc-second (about 30 m) bare earth, from
+                   <a href="https://portal.opentopography.org/datasets" target="_blank" rel="noopener">
+                   OpenTopography</a>.</p>
+                <p class="src-check"><b>Checked against</b> Copernicus COP30 over the same area, and an
+                   independent elevation point file.</p>
+                <p class="src-found">COP30 sits 1.00 m above GEDTM30 on land (median), the expected gap
+                   between a surface model and bare earth. The point file turned out to be ellipsoidal,
+                   92.1 m below sea-level heights, so it is not used as a source: it is what confirmed
+                   our heights are above mean sea level.</p>
+            </li>
+
+            <li class="src-card">
+                <h3>Drainage network <span>10,240 drains</span></h3>
+                <p class="src-from">The GCC storm water drain survey, 2,219 km with sections, invert
+                   levels, ward and zone
+                   (<a href="https://data.opencity.in/dataset/chennai-stormwater-drain-swd-maps"
+                       target="_blank" rel="noopener">Chennai SWD maps, OpenCity</a>).</p>
+                <p class="src-check"><b>Checked against</b> the GCC / SECON-JBA ward base-map sheets it
+                   was digitised from, ward by ward.</p>
+                <p class="src-found">196 wards across both sources, 91 carry both, and 90 of those agree.
+                   Ward 33's zone disagrees between the sheet and the survey, and ward 35 has a sheet but
+                   no drains in the survey. Both are reported, neither is patched.</p>
+            </li>
+
+            <li class="src-card">
+                <h3>Street mapping <span>80,206 roads</span></h3>
+                <p class="src-from"><a href="https://www.openstreetmap.org/" target="_blank"
+                   rel="noopener">OpenStreetMap</a>, with its rivers, canals and nullahs used to keep
+                   channels draining in the DEM.</p>
+                <p class="src-check"><b>Checked against</b> OpenStreetMap's own bridge tags, and against
+                   depths measured on the DEM with and without the waterways.</p>
+                <p class="src-found">1,011 bridges are left out of flooding, because the DEM under a
+                   bridge is the river below it. Burning the 574 mapped waterways into the DEM removes
+                   false canal "lakes": 5th Street, Kilpauk drops from 212 cm to 51 cm.</p>
+            </li>
+
+            <li class="src-card">
+                <h3>Rainfall <span>stands in for IMD Doppler radar</span></h3>
+                <p class="src-from"><a href="https://open-meteo.com/" target="_blank" rel="noopener">
+                   Open-Meteo</a>: 15-minute precipitation drives the flood forecast, hourly drives the
+                   rain-movement map.</p>
+                <p class="src-check"><b>Checked against</b> each other, by summing the 15-minute values
+                   into hours.</p>
+                <p class="src-found">The two agree hour for hour, as they should from one provider. The
+                   check also caught a clock error, where the 15-minute feed can start behind the real
+                   time. An IMD Doppler feed would replace this one function and nothing else.</p>
+            </li>
+        </ul>
+
+        <p class="src-note"><b>Not yet checked:</b> no flood depth or timing has been compared with a
+           recorded flood, so the order and timing in which streets flood are the trustworthy output,
+           not exact centimetres. Some surveyed drain sizes also look too small for the land they
+           drain, and ward boundaries are inferred from the nearest surveyed drain.</p>
+    </section>
+
     <section class="res-tools" aria-label="Filter wards">
         <input id="ward-search" type="search" placeholder="Search ward number or zone name"
                aria-label="Search wards" autocomplete="off">
