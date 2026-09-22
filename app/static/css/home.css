@@ -740,6 +740,39 @@ button { font: inherit; cursor: pointer; }
     color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums;
 }
 
+/* Resources: the data behind the model, and what each source was checked against. */
+.src {
+    padding: 1.15rem 1.35rem 1.3rem;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.src h2 { margin: 0 0 .35rem; font-size: 1.05rem; font-weight: 800; letter-spacing: -.01em; }
+.src-lead { margin: 0 0 1rem; max-width: 52rem; color: var(--muted); font-size: .85rem; }
+.src-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: .9rem; margin: 0; padding: 0; list-style: none;
+}
+.src-card {
+    padding: .85rem .95rem .95rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.src-card h3 {
+    margin: 0 0 .45rem; font-size: .9rem; font-weight: 800; color: var(--accent-ink);
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem;
+}
+.src-card h3 span {
+    font-size: .68rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em;
+}
+.src-card p { margin: 0 0 .4rem; font-size: .8rem; line-height: 1.45; }
+.src-card p:last-child { margin-bottom: 0; }
+.src-from a { color: var(--accent-ink); font-weight: 700; }
+.src-check { color: var(--ink); }
+.src-found { color: var(--muted); }
+.src-note {
+    margin: 1rem 0 0; padding: .6rem .7rem; border-radius: var(--radius-sm);
+    background: var(--accent-soft); color: var(--accent-ink); font-size: .78rem; line-height: 1.45;
+}
+
 .ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
 .ward-card {
     display: flex; flex-direction: column; gap: .7rem;
