@@ -206,6 +206,13 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
         # cannot take any more.
         drain["outlet_node"] = nodes[-1]
         drain["outlet"] = node_points[nodes[-1]]
+        drain["start_node"] = nodes[0]
+
+    # A drain nothing else runs out of is where its network leaves: the rate water can
+    # actually be carried away at, rather than every drain in a chain counted again.
+    fed = {drain["start_node"] for drain in drains}
+    for drain in drains:
+        drain["is_outfall"] = drain["outlet_node"] not in fed
 
 
 def flow_direction(invert_start: Any, invert_end: Any) -> str:

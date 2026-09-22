@@ -58,17 +58,18 @@ const pondingUi = (() => {
     // Live or scenario, in words and colour, at the top of the panel.
     const mode = el("div", "mode-badge");
 
-    // Drains take this much off every catchment, every hour. Open and clear, about
-    // 20 mm/h; full or blocked, nothing, which is the worst case.
-    const drainLabel = el("label", "drain-label", "Drains carry away");
+    // How much of the surveyed drain capacity is working. The GCC survey gives each
+    // drain's conveyance; what it does not record is how silted or blocked it is, and
+    // that is what this asks.
+    const drainLabel = el("label", "drain-label", "Drains working at");
     const drain = document.createElement("select");
     for (const [value, label] of [
-        ["0", "Nothing (full or blocked)"],
-        ["10", "10 mm/h (partly silted)"],
-        ["20", "20 mm/h (open and clear)"],
-        ["40", "40 mm/h (well maintained)"],
+        ["1", "Full surveyed capacity (best case)"],
+        ["0.5", "Half of it (silted)"],
+        ["0.25", "A quarter of it (badly silted)"],
+        ["0", "Nothing (blocked)"],
     ]) drain.append(opt(value, label));
-    drain.value = "20";
+    drain.value = "1";
     drainLabel.append(drain);
 
     const controls = el("div", "drain-filters");
@@ -96,8 +97,10 @@ const pondingUi = (() => {
         legend.append(item);
     }
     const caveat = el("div", "flood-note",
-        "30 m DEM, rain taken as even over the city. The order and timing in which streets " +
-        "flood are sound; depths over ~1 m are usually DEM error.");
+        "Drainage is each hollow's surveyed outfall conveyance, which is a best case: " +
+        "the survey does not record silting or gully inlets. 30 m DEM, rain taken as even " +
+        "over the city; the order and timing streets flood in are sound, depths over ~1 m " +
+        "are usually DEM error.");
 
     container.append(header, mode, note, controls, clock, chart, slider, play, stats, upcoming, legend, caveat);
     const dock = document.getElementById("ponding-panel");
@@ -393,8 +396,10 @@ function drawPonding() {
     pondingUi.stats.replaceChildren(
         el("div", "drain-stat-line", `${counts.wet.toLocaleString()} named streets under water now · ` +
             `${counts.impassable.toLocaleString()} impassable`),
-        el("div", "drain-stat-line", `Rain now ${data.rain.rain_mm_h[step]} mm/h · ${data.rain.total_mm} mm over 3 h · ` +
-            `drains ${data.drain_mm_h} mm/h`),
+        el("div", "drain-stat-line", `Rain now ${data.rain.rain_mm_h[step]} mm/h · ${data.rain.total_mm} mm over 3 h`),
+        el("div", "drain-stat-line", `Drains at ${Math.round(data.drain_condition * 100)}% of the GCC survey · ` +
+            `${data.drainage.hollows_from_the_survey.toLocaleString()} hollows drained by surveyed drains, ` +
+            `the rest at the surveyed rate (${data.drainage.surveyed_rate_mm_h} mm/h)`),
         el("div", "drain-stat-line", `By 3 h: ${data.named_streets.toLocaleString()} streets go under, ` +
             `${data.impassable_streets.toLocaleString()} impassable, ${data.wet_km} km of road`),
     );
@@ -435,7 +440,7 @@ async function loadPonding() {
     params.set("lat", centre.lat.toFixed(4));
     params.set("lon", centre.lng.toFixed(4));
     if (pondingUi.rain.value) params.set("rain_mm_h", pondingUi.rain.value);
-    params.set("drain_mm_h", pondingUi.drain.value);
+    params.set("drain_condition", pondingUi.drain.value);
     if (drainUi.zoneSelect.value) params.set("zone", drainUi.zoneSelect.value);
     if (drainUi.wardSelect.value) params.set("ward", drainUi.wardSelect.value);
 
@@ -461,7 +466,8 @@ async function loadPonding() {
         ? `${data.rain.source} · ${data.stretches.toLocaleString()} street stretches go under`
         : `${data.rain.source}: ${data.rain.total_mm} mm, no street goes under.`;
     streetTable.summary.textContent =
-        `${data.rain.source}, ${data.rain.total_mm} mm in 3 h, drains taking ${data.drain_mm_h} mm/h: ` +
+        `${data.rain.source}, ${data.rain.total_mm} mm in 3 h, drains at ` +
+        `${Math.round(data.drain_condition * 100)}% of the GCC survey: ` +
         `${data.named_streets.toLocaleString()} named streets go under, ` +
         `${data.impassable_streets.toLocaleString()} past 30 cm. Soonest first; click a street to go to it.`;
     drawPonding();
