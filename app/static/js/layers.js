@@ -73,6 +73,58 @@ fetch("/data-collection/streets")
     })
     .catch((err) => console.warn("Street network unavailable:", err.message));
 
+// --- The rain the models run on -------------------------------------------------
+// One rate, mm/h, drives the drain loads and anything else drawn from the rainfall.
+// Several controls can set it (the live feed, the forecast sliders, a flood scenario);
+// whichever did last is recorded with it, so the page can always say what it is
+// showing instead of silently mixing sources.
+
+window.rainSource = { mmPerHour: 0, label: "waiting for the live nowcast", kind: "none" };
+window.rainNowMmH = 0;
+
+// kind: "live" (the nowcast, now), "forecast" (a future hour someone picked),
+// "scenario" (a hypothetical rate).
+function publishRain(mmPerHour, label, kind) {
+    if (typeof mmPerHour !== "number" || !isFinite(mmPerHour)) return;
+    window.rainNowMmH = mmPerHour;
+    window.rainSource = { mmPerHour, label, kind };
+    window.dispatchEvent(new CustomEvent("rain-change", { detail: window.rainSource }));
+}
+
+const LIVE_RAIN_REFRESH_MS = 5 * 60 * 1000;
+
+// The rain falling now over the drainage area: the selected place if it is in
+// Chennai, else the city centre. The drains cover Chennai, so rain anywhere else is
+// not theirs.
+async function loadLiveRain() {
+    const point = marker && CHENNAI_BOUNDS.contains(marker.getLatLng())
+        ? marker.getLatLng() : L.latLng(CHENNAI_CENTRE);
+    try {
+        const resp = await fetch(`/data-collection/nowcast?lat=${point.lat.toFixed(4)}&lon=${point.lng.toFixed(4)}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const nowcast = await resp.json();
+        // Someone chose a forecast hour or a scenario while this was in flight:
+        // theirs stands until they go back to live.
+        if (!["live", "none"].includes(window.rainSource.kind)) return;
+        const slot = nowcast.times[0] ? nowcast.times[0].slice(11, 16) : "now";
+        publishRain(nowcast.rain_mm_h[0] ?? 0, `Live nowcast, ${slot} slot (Open-Meteo 15-min)`, "live");
+    } catch (err) {
+        console.warn("Live rain unavailable:", err.message);
+    }
+}
+
+function backToLiveRain() {
+    window.rainSource = { ...window.rainSource, kind: "none" };
+    loadLiveRain();
+}
+
+loadLiveRain();
+// Real time: the nowcast moves on every 15 minutes; checking every 5 keeps the drains
+// within one slot of it. Only while live, so it never overrides a chosen hour.
+setInterval(() => {
+    if (["live", "none"].includes(window.rainSource.kind)) loadLiveRain();
+}, LIVE_RAIN_REFRESH_MS);
+
 // --- Rain movement forecast -----------------------------------------------------
 // Hourly rainfall on a grid around the selected place, animated so the direction and
 // timing of approaching rain can be seen.
@@ -111,6 +163,8 @@ const rain = {
     animationId: null,
     request: 0,
     query: null,
+    driving: false,       // whether this grid is the rain the drains run on
+    publishedHour: null,
 };
 
 function element(tag, className, text) {
@@ -216,11 +270,26 @@ function drawRain(frame) {
 
     rainUi.scrubber.value = index;
     showRainDataHour(index);
+    if (rain.driving && index !== rain.publishedHour) publishRainHour(index);
     rainUi.time.textContent = index === 0
         ? "Now"
         : new Date(times[index]).toLocaleString(undefined, {
             weekday: "short", hour: "numeric", minute: "2-digit",
         });
+}
+
+// The hour on show becomes the rain the drains run on, read at the centre of the grid,
+// which is the selected place. Only once someone scrubs or plays: loading the grid
+// shows the forecast, it does not replace the live nowcast.
+function publishRainHour(index) {
+    const { rain_mm: frames, times, lats } = rain.grid;
+    const centre = Math.floor(lats.length / 2) * lats.length + Math.floor(lats.length / 2);
+    rain.publishedHour = index;
+    const when = new Date(times[index]).toLocaleString(undefined, {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+    });
+    // Hourly totals are mm fallen in the hour, which is the hour's mean rate in mm/h.
+    publishRain(frames[index][centre] ?? 0, `Rain movement forecast, ${when} (hourly)`, "forecast");
 }
 
 function stopRain() {
@@ -251,6 +320,7 @@ rainUi.play.addEventListener("click", () => {
         return;
     }
     rain.playing = true;
+    rain.driving = true;
     rainUi.play.textContent = "❚❚ Pause";
     rain.animationId = requestAnimationFrame(animateRain);
 });
@@ -262,7 +332,10 @@ function showRainHour(index) {
     drawRain(index);
 }
 
-rainUi.scrubber.addEventListener("input", () => showRainHour(Number(rainUi.scrubber.value)));
+rainUi.scrubber.addEventListener("input", () => {
+    rain.driving = true;
+    showRainHour(Number(rainUi.scrubber.value));
+});
 
 // Loads the grid around a place and shows its current hour, without moving the map.
 async function loadRainGrid(lat, lon) {
@@ -288,6 +361,8 @@ async function loadRainGrid(lat, lon) {
     if (id !== rain.request) return;
 
     stopRain();
+    rain.driving = false;
+    rain.publishedHour = null;
     const half = grid.step_deg / 2;
     const last = grid.lats.length - 1;
     rain.grid = grid;

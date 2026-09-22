@@ -132,6 +132,8 @@ body {
         "days   alert"
         "map    drains"
         "map    flood"
+        "map    ponding"
+        "streets streets"
         "data   data";
     align-content: start;
 }
@@ -147,6 +149,9 @@ body {
 .map-card { grid-area: map; }
 #drain-panel { grid-area: drains; align-self: start; }
 #flood-panel { grid-area: flood; align-self: start; }
+#ponding-panel { grid-area: ponding; align-self: start; }
+#street-depths { grid-area: streets; }
+[hidden] { display: none !important; }
 #rain-data { grid-area: data; }
 
 #weather, .timeline, .next-rain, .map-card, #rain-data {
@@ -616,6 +621,91 @@ button { font: inherit; cursor: pointer; }
 .flood-slider { width: 100%; margin: .45rem 0 .1rem; accent-color: var(--accent); }
 .flood-stats { margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--line); }
 
+/* Rain on streets: the depth profile in the popup, and the street table under the map. */
+.depth-profile { display: block; width: 100%; height: 70px; margin-top: .45rem; }
+.depth-guide { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 1; }
+.depth-axis { display: flex; justify-content: space-between; font-size: .66rem; color: var(--muted); }
+.depth-points { margin-top: .4rem; font-size: .74rem; }
+.depth-points summary { cursor: pointer; color: var(--muted); font-weight: 700; }
+.depth-points table { width: 100%; }
+
+#street-depths {
+    padding: 1.1rem 1.25rem 1.25rem;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    font-size: .85rem;
+}
+.street-head h2 { margin: 0 0 .3rem; font-size: 1rem; font-weight: 800; }
+.street-summary { margin: 0 0 .65rem; color: var(--muted); font-size: .8rem; }
+.street-tools { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .6rem; }
+.street-tools input {
+    flex: 1 1 16rem; padding: .45rem .6rem; font: inherit;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+}
+.street-scroll { max-height: 32rem; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.street-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.street-table th {
+    position: sticky; top: 0; background: var(--bg); text-align: left;
+    padding: .45rem .6rem; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
+.street-table td { padding: .4rem .6rem; border-top: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.street-table td:nth-child(2), .street-table td:nth-child(3) { white-space: normal; }
+.street-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.street-table tbody tr { cursor: pointer; }
+.street-table tbody tr:hover, .street-table tbody tr:focus { background: var(--accent-soft); outline: none; }
+.street-kind { margin-left: .35rem; font-size: .68rem; color: var(--muted); }
+.depth-pill {
+    display: inline-block; min-width: 2.6rem; padding: .1rem .45rem; border-radius: 999px;
+    color: #fff; font-weight: 800; text-align: center;
+}
+.street-more { margin-top: .6rem; }
+.street-table tbody tr.is-wet td:first-child { box-shadow: inset 3px 0 0 #c62828; }
+.chart-title { margin-top: .5rem; font-size: .68rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.depth-profile rect.marked { stroke: var(--ink); stroke-width: 1.5; }
+
+/* The 5-minute clock: rain per step as bars, the current step lit. */
+.rain-bars { display: flex; align-items: flex-end; gap: 1px; height: 2.4rem; margin-top: .4rem; }
+.rain-bars i { flex: 1; min-height: 2px; background: var(--line); border-radius: 2px 2px 0 0; }
+.rain-bars i.past { background: #90caf9; }
+.rain-bars i.now { background: var(--accent); }
+.play-button { margin-top: .35rem; }
+
+/* Live or scenario: never ambiguous on the panel, the map, or a screenshot of either. */
+.mode-badge {
+    margin: .1rem 0 .4rem; padding: .35rem .5rem; border-radius: 8px;
+    font-size: .7rem; font-weight: 800; letter-spacing: .03em;
+}
+.mode-badge.live { background: #dff3e4; color: #1b6b36; }
+.mode-badge.scenario { background: #fde4e1; color: #a02a20; }
+/* The rain the drain loads are computed for, and where it came from. */
+.rain-source {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem;
+    margin-bottom: .35rem; padding: .3rem .45rem; border-radius: 8px;
+    font-size: .74rem; font-weight: 700;
+}
+.rain-source.live, .rain-source.none { background: #dff3e4; color: #1b6b36; }
+.rain-source.forecast { background: #fff4d6; color: #7a5200; }
+.rain-source.scenario { background: #fde4e1; color: #a02a20; }
+.rain-source-back {
+    padding: .1rem .5rem; font: inherit; font-size: .7rem; cursor: pointer;
+    border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit;
+}
+
+.scenario-banner {
+    padding: .4rem .7rem; border-radius: 8px;
+    background: #a02a20; color: #fff; font-weight: 800; font-size: .78rem;
+    box-shadow: var(--shadow); pointer-events: none;
+}
+.upcoming { margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+.upcoming-head { font-size: .7rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .3rem; }
+.upcoming-item {
+    display: flex; flex-direction: column; gap: .1rem; width: 100%;
+    padding: .35rem .45rem; margin-top: .25rem; text-align: left;
+    font: inherit; font-size: .76rem; color: var(--ink);
+    background: var(--accent-soft); border: 0; border-radius: 8px; cursor: pointer;
+}
+.upcoming-item span + span { color: var(--muted); font-size: .72rem; }
+.upcoming-item:hover { outline: 2px solid var(--accent); }
+
 /* --- Resources page ----------------------------------------------------------- */
 
 .page { max-width: 78rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
@@ -780,7 +870,8 @@ button { font: inherit; cursor: pointer; }
     .app {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "flood" "data";
+            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "flood" "ponding"
+            "streets" "data";
     }
     .topbar { border-radius: var(--radius); }
     /* On one column the map gets the screen, not a letterbox. */

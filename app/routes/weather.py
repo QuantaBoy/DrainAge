@@ -73,15 +73,24 @@ def rain_mm(data: dict[str, Any]) -> float:
     return 0.0
 
 
-def local_current_hour(utc_offset_seconds: int) -> datetime.datetime:
-    """The current hour at a location, as a naive datetime in its local time.
+def local_current_step(utc_offset_seconds: int, step_minutes: int = 60) -> datetime.datetime:
+    """Now at a location, floored to the start of its current step, as a naive local
+    datetime: the top of the hour by default, or the top of any shorter step a feed
+    is sampled at (e.g. 15 minutes for Open-Meteo's minutely_15 product).
 
     Forecast series are expressed in the location's local time, which may differ
     from this server's timezone.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
     local = now + datetime.timedelta(seconds=utc_offset_seconds)
-    return local.replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    local = local.replace(tzinfo=None, second=0, microsecond=0)
+    floored = local.minute - local.minute % step_minutes
+    return local.replace(minute=0) + datetime.timedelta(minutes=floored)
+
+
+def local_current_hour(utc_offset_seconds: int) -> datetime.datetime:
+    """The current hour at a location, as a naive datetime in its local time."""
+    return local_current_step(utc_offset_seconds, 60)
 
 
 def next_rain_spell(hours: list[dict[str, Any]]) -> Optional[dict[str, Any]]:

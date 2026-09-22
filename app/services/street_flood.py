@@ -79,10 +79,15 @@ def _load() -> dict[str, Any]:
     if STREETS_PATH.exists():
         collection = json.loads(STREETS_PATH.read_text(encoding="utf-8"))
         for feature in collection["features"]:
+            # A bridge deck is metres above the DEM, which reads the river or canal under
+            # it: every flood model would put the channel's water on the deck.
+            if feature["properties"].get("bridge"):
+                continue
             coords = densify(feature["geometry"]["coordinates"])
             index = len(streets)
             streets.append({"coords": coords, "name": feature["properties"].get("name"),
-                            "highway": feature["properties"].get("highway")})
+                            "highway": feature["properties"].get("highway"),
+                            "tunnel": bool(feature["properties"].get("tunnel"))})
             for vertex, (lon, lat) in enumerate(coords):
                 cells[(int(lon // CELL_DEG), int(lat // CELL_DEG))].append((index, vertex))
 

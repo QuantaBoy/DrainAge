@@ -7,5 +7,7 @@ cryptography==50.0.1
 # Terrain: reading the DEM, road level, and the elevation layer image.
 numpy==2.5.2
 scipy==1.18.1
+# Rain ponding: depression fill (reconstruction) and catchments (watershed).
+scikit-image==0.26.0
 tifffile==2026.8.23
 pillow==12.3.0

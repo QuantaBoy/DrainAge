@@ -1,0 +1,7 @@
+measure,value
+cells_compared,961851
+median_cop30_minus_gedtm30_m,1.0
+p5_m,-0.27
+p95_m,3.65
+gedtm30_cells_below_minus_2m,188
+cop30_cells_below_minus_2m,229

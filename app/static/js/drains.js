@@ -606,7 +606,20 @@ async function refreshSummary() {
         : drainUi.zoneSelect.value ? zoneLabel(drainUi.zoneSelect.value)
         : "all zones";
 
+    // Which rain these loads are for: the live nowcast, an hour someone picked, or a
+    // scenario. Never left for the reader to guess.
+    const source = window.rainSource;
+    const rainLine = el("div", `rain-source ${source.kind}`,
+        `Rain ${fmt(summary.rain_mm_h, 1)} mm/h · ${source.label}`);
+    if (source.kind !== "live" && source.kind !== "none") {
+        const back = el("button", "rain-source-back", "Back to live");
+        back.type = "button";
+        back.addEventListener("click", backToLiveRain);
+        rainLine.append(back);
+    }
+
     drainUi.status.replaceChildren(
+        rainLine,
         el("div", "drain-stat-line",
             `${summary.drains.toLocaleString()} drains · ${summary.length_km.toLocaleString()} km · ${where}`),
         el("div", "drain-stat-line",

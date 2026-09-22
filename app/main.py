@@ -41,7 +41,8 @@ async def warm_caches() -> None:
 
     from app.services import street_flood
 
-    for job in (drains._load_csv, street_flood._load):
+    # warm_ponding reads both of the others, so it runs after them in one job.
+    for job in (drains._load_csv, lambda: (street_flood._load(), flood.warm_ponding())):
         asyncio.get_running_loop().run_in_executor(None, job)
 
 
