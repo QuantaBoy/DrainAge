@@ -23,7 +23,8 @@ from app.services import hydraulics
 
 router = APIRouter(prefix="/data-collection", tags=["Drains"])
 
-CSV_PATH = Path(__file__).resolve().parent.parent.parent / "gcc_storm_water_drains (1).csv"
+CSV_PATH = (Path(__file__).resolve().parent.parent.parent
+            / "Cross-Checked Data" / "gcc_storm_water_drains (1).csv")
 # Ward and zone as printed on the GCC base-map sheets in Ward/, extracted from their
 # title blocks. The sheets are the paper source the survey CSV was digitised from, so
 # they are what the CSV's own ward and zone codes are checked against.
