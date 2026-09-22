@@ -6,6 +6,7 @@ from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -21,6 +22,8 @@ load_dotenv(ROOT_DIR / ".env")
 from app.routes import drains, flood, resources, streets, weather  # noqa: E402
 
 app = FastAPI()
+# Flood and drain GeoJSON is numbers in repeated keys, which compresses about fivefold.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(weather.router)
 app.include_router(streets.router)
 app.include_router(drains.router)
@@ -28,6 +31,18 @@ app.include_router(flood.router)
 app.include_router(resources.router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+@app.on_event("startup")
+async def warm_caches() -> None:
+    # Parsing the drain survey and indexing 80k streets takes seconds; doing it here,
+    # in the background, keeps it off the first flood request.
+    import asyncio
+
+    from app.services import street_flood
+
+    for job in (drains._load_csv, street_flood._load):
+        asyncio.get_running_loop().run_in_executor(None, job)
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

@@ -20,6 +20,61 @@ function depthColor(cm) {
 
 const floodLayer = L.layerGroup();
 layerControl.addOverlay(floodLayer, "Flood nowcast (0–3 h)");
+// A city-wide run is twenty thousand street stretches: as SVG they would stall panning.
+const floodRenderer = L.canvas({ padding: 0.5 });
+
+// ─── Elevation: the ground the water runs over ─────────────────────────────────
+// Drawn once by the server from the DEM: colour for height, shading for which way the
+// ground falls. It is what the flood model reads, so the two can be checked by eye:
+// flooded streets should sit in the blues.
+
+const elevationLayer = L.layerGroup();
+layerControl.addOverlay(elevationLayer, "Elevation (DEM)");
+
+const elevationLegend = L.control({ position: "bottomright" });
+elevationLegend.onAdd = () => {
+    const box = el("div", "elev-legend");
+    box.append(el("div", "elev-title", "Ground height (m)"));
+    box.append(el("div", "elev-bar"), el("div", "elev-ticks"));
+    L.DomEvent.disableClickPropagation(box);
+    return box;
+};
+
+let elevationInfo = null;
+
+async function showElevation() {
+    if (!elevationInfo) {
+        const resp = await fetch("/data-collection/elevation");
+        if (!resp.ok) return;
+        elevationInfo = await resp.json();
+        const image = L.imageOverlay(elevationInfo.image, elevationInfo.bounds, {
+            opacity: 0.75, interactive: false,
+            attribution: "DEM &copy; Copernicus GLO-30",
+        });
+        elevationLayer.addLayer(image);
+    }
+    elevationLegend.addTo(map);
+    const box = elevationLegend.getContainer();
+    const stops = elevationInfo.stops;
+    const low = stops[0].m, high = stops.at(-1).m;
+    // The ramp is uneven on purpose - most colours sit in the bottom 10 m - so the bar
+    // shows the stops at equal widths and labels each one.
+    box.querySelector(".elev-bar").style.background =
+        `linear-gradient(90deg, ${stops.map((s) => s.color).join(", ")})`;
+    box.querySelector(".elev-ticks").replaceChildren(...stops.map((s) => el("span", "", String(s.m))));
+    const source = elevationInfo.source;
+    const kind = source.kind === "terrain" ? "bare earth" : "surface, roofs included";
+    box.querySelector(".elev-title").textContent = `Ground height (m) · ${source.name}, ${kind}`;
+    box.title = `Range ${elevationInfo.range_m[0]} to ${elevationInfo.range_m[1]} m ` +
+        `(${low} to ${high} m shown). ${source.files.join(", ")}`;
+}
+
+map.on("overlayadd", (event) => {
+    if (event.layer === elevationLayer) showElevation();
+});
+map.on("overlayremove", (event) => {
+    if (event.layer === elevationLayer) elevationLegend.remove();
+});
 
 const floodState = {
     request: 0,
@@ -97,6 +152,54 @@ function floodTooltip(props, cm) {
     </div>`;
 }
 
+// The wet part of one street stretch at one step, as runs of consecutive vertices,
+// each with the deepest water on it. A vertex is wet when the water has spread that far
+// along the road and the ground there is below the level it stands at.
+function wetRuns(stretch, manhole, step) {
+    const props = stretch.properties;
+    const reach = manhole.reach_m[step] ?? 0;
+    const level = manhole.level_m[step];
+    const atManhole = manhole.depth_cm[step] ?? 0;
+    const runs = [];
+    let run = null;
+    props.distance_m.forEach((distance, i) => {
+        const ground = props.ground_m[i];
+        // Terrain decides where the water goes, the manhole how deep: below the water
+        // level a street is wet, but never deeper than the water where it came up.
+        const depth = level == null || ground == null ? atManhole
+            : Math.min((level - ground) * 100, atManhole);
+        const wet = atManhole >= floodState.data.thresholds.reported_cm
+            && distance <= reach && depth > 0;
+        if (wet) {
+            if (!run) runs.push(run = { points: [], depth: 0 });
+            const [lon, lat] = stretch.geometry.coordinates[i];
+            run.points.push([lat, lon]);
+            run.depth = Math.max(run.depth, depth);
+        } else {
+            run = null;
+        }
+    });
+    return runs.filter((r) => r.points.length >= 2);
+}
+
+function streetTooltip(name, highway, cm, manhole) {
+    const rows = [
+        ["Water on the road", `<b>${cm.toFixed(0)} cm</b>${cm >= 30 ? " — impassable" : ""}`],
+        ["Road", esc(highway || "—")],
+        ["Comes from", esc(manhole.street || "a surcharging drain")],
+        ["Starts", manhole.floods_in_minutes === 0 ? "already flooding"
+            : `in ${manhole.floods_in_minutes} min`],
+    ];
+    return `<div class="drain-tip">
+        <div class="drain-tip-head">
+            <span>${esc(name || "Unnamed street")}</span>
+            <span class="drain-tip-band" style="background:${depthColor(cm)}">${cm.toFixed(0)} cm</span>
+        </div>
+        <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>
+        <div class="drain-tip-foot">Wet where the DEM puts the road below the water level; no deeper than at the manhole</div>
+    </div>`;
+}
+
 function drawFlood() {
     floodLayer.clearLayers();
     const data = floodState.data;
@@ -106,6 +209,43 @@ function drawFlood() {
     let wet = 0;
     let blocked = 0;
 
+    // Streets first, so the manholes they come from sit on top.
+    const manholes = new Map(data.features.map((f) => [f.properties.node, f.properties]));
+    const wetStreets = new Set();
+    const blockedStreets = new Set();
+    let unnamed = 0;
+    const drawn = [];
+    for (const stretch of data.streets?.features ?? []) {
+        const manhole = manholes.get(stretch.properties.node);
+        if (!manhole) continue;
+        for (const run of wetRuns(stretch, manhole, step)) {
+            // Counted by name: one street is one street, however many stretches of it
+            // are wet. Unnamed lanes are counted apart rather than as streets.
+            const key = stretch.properties.name;
+            if (key) {
+                wetStreets.add(key);
+                if (run.depth >= data.thresholds.impassable_cm) blockedStreets.add(key);
+            } else {
+                unnamed++;
+            }
+            drawn.push({ run, stretch, manhole });
+        }
+    }
+    // Deepest drawn last, so where stretches overlap the worse water shows.
+    drawn.sort((a, b) => a.run.depth - b.run.depth);
+    for (const { run, stretch, manhole } of drawn) {
+        L.polyline(run.points, {
+            renderer: floodRenderer,
+            color: depthColor(run.depth),
+            weight: run.depth >= data.thresholds.impassable_cm ? 7 : 5,
+            opacity: 0.9,
+            lineCap: "round",
+        })
+            .bindTooltip(streetTooltip(stretch.properties.name, stretch.properties.highway,
+                run.depth, manhole), { sticky: true, className: "drain-tooltip", direction: "auto" })
+            .addTo(floodLayer);
+    }
+
     for (const feature of data.features) {
         const cm = feature.properties.depth_cm[step] ?? 0;
         if (cm < data.thresholds.reported_cm) continue;
@@ -114,12 +254,14 @@ function drawFlood() {
 
         const [lon, lat] = feature.geometry.coordinates;
         // Radius carries depth as well as colour, so a glance finds the deep water.
+        // The manhole the water comes up at: a small ringed dot, the street is the story.
         L.circleMarker([lat, lon], {
-            radius: Math.min(4 + cm / 6, 16),
-            color: depthColor(cm),
-            weight: 1,
+            renderer: floodRenderer,
+            radius: 4,
+            color: "#fff",
+            weight: 1.5,
             fillColor: depthColor(cm),
-            fillOpacity: 0.55,
+            fillOpacity: 1,
         })
             .bindTooltip(floodTooltip(feature.properties, cm), {
                 sticky: true, className: "drain-tooltip", direction: "auto",
@@ -134,7 +276,12 @@ function drawFlood() {
     floodUi.clock.textContent = (minutes === 0 ? "Now" : `+${minutes} min`) + wall;
     floodUi.stats.replaceChildren(
         el("div", "drain-stat-line",
-            `${wet} street${wet === 1 ? "" : "s"} under water · ${blocked} impassable`),
+            `${wetStreets.size} named street${wetStreets.size === 1 ? "" : "s"} under water · ` +
+            `${blockedStreets.size} impassable`),
+        el("div", "drain-stat-line",
+            `plus ${unnamed} stretch${unnamed === 1 ? "" : "es"} of unnamed lane`),
+        el("div", "drain-stat-line",
+            `${wet} manhole${wet === 1 ? "" : "s"} surcharging · ${blocked} over 30 cm`),
         el("div", "drain-stat-line",
             `Rain ${data.nowcast.rain_mm_h[step]} mm/h · deepest ${data.worst_depth_cm} cm in the window`),
     );
@@ -153,6 +300,7 @@ async function loadFlood() {
     if (drainUi.zoneSelect.value) params.set("zone", drainUi.zoneSelect.value);
     if (drainUi.wardSelect.value) params.set("ward", drainUi.wardSelect.value);
     if (floodUi.scenario.value) params.set("rain_mm_h", floodUi.scenario.value);
+    params.set("streets", "true");
 
     let data;
     try {
