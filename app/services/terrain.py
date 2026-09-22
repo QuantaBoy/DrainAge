@@ -1,12 +1,13 @@
-"""The ground the water ends up on: Copernicus DEM tiles, read where they are needed.
+"""The ground the water ends up on: a DEM, read where it is needed.
 
 A surcharged drain does not stop at "over capacity". The water it cannot take comes
 back up at the manhole and runs downhill until the street holds it, so turning a spill
 rate into a street-level depth needs the terrain around that manhole.
 
-The tiles are 1 arc-second Copernicus DSM (about 30 m at Chennai's latitude) in plain
-WGS 84, so a lon/lat maps onto a pixel with the tie point and pixel scale from the
-GeoTIFF itself - no reprojection, and no GDAL.
+The DEM is 1 arc-second (about 30 m at Chennai's latitude) in plain WGS 84: the
+OpenTopography download fetch_dem.py saves (GEDTM30 bare earth by preference), or the
+Copernicus surface-model tiles. Either way a lon/lat maps onto a pixel with the tie
+point, pixel scale and raster type from the GeoTIFF itself - no reprojection, no GDAL.
 
 ponytail: 30 m says nothing about the camber of one street, so a depth here is the
 depth of the depression a street sits in, not of the kerb line. Swapping in a LiDAR
@@ -41,46 +42,117 @@ KERB_M = 0.15
 # Water shallower than this is wet tarmac, not a flood, and is not reported.
 MIN_DEPTH_M = 0.02
 
-_tiles: dict[tuple[int, int], dict[str, Any]] = {}
+# Which DEM the model reads. fetch_dem.py saves OpenTopography downloads to
+# app/data/dem/<DEMTYPE>.tif; the Copernicus tiles in app/data are the fallback.
+# DEM_SOURCE in .env picks one ("GEDTM30", "COP30", "tiles"); unset, a bare-earth
+# model wins over a surface one, and any download over the tiles.
+DEM_DIR = DATA_DIR / "dem"
+DEM_PREFERENCE = ("GEDTM30", "COP30", "NASADEM", "AW3D30", "SRTMGL1", "COP90")
+# A terrain model (DTM) has buildings and trees taken out; a surface model (DSM) reads
+# roofs and canopy as ground and needs the road-level trick in ground_level().
+TERRAIN_MODELS = {"GEDTM30"}
+
+# GeoTIFF raster type key: whether the tie point is the corner of the first pixel
+# (PixelIsArea) or its centre (PixelIsPoint).
+_RASTER_TYPE_KEY, _PIXEL_IS_POINT = 1025, 2
+
+_sources: list[dict[str, Any]] | None = None
 
 
-def _load_tile(lat_deg: int, lon_deg: int) -> dict[str, Any] | None:
-    """Read one DEM tile, with the georeferencing it carries."""
-    key = (lat_deg, lon_deg)
-    if key in _tiles:
-        return _tiles[key]
+def _read_raster(path: Path, name: str) -> dict[str, Any]:
+    """One GeoTIFF, with its extent worked out from the tags it carries."""
+    import logging
 
-    path = DATA_DIR / TILE_PATTERN.format(lat=lat_deg, lon=lon_deg)
-    if not path.exists():
-        _tiles[key] = None
-        return None
-
+    logging.getLogger("tifffile").setLevel(logging.ERROR)
     with tifffile.TiffFile(str(path)) as handle:
         page = handle.pages[0]
-        scale = page.tags["ModelPixelScaleTag"].value
-        tie = page.tags["ModelTiepointTag"].value
-        _tiles[key] = {
-            "grid": page.asarray(),
-            # Tie point is the outer corner of the first pixel: (lon, lat) of the
-            # top-left, with the grid running east and south from there.
-            "west": float(tie[3]),
-            "north": float(tie[4]),
-            "lon_step": float(scale[0]),
-            "lat_step": float(scale[1]),
-        }
-    return _tiles[key]
+        tags = page.tags
+        scale = tags["ModelPixelScaleTag"].value
+        tie = tags["ModelTiepointTag"].value
+        keys = tags["GeoKeyDirectoryTag"].value
+        geokeys = {keys[i]: keys[i + 3] for i in range(4, len(keys), 4)}
+        grid = page.asarray().astype(np.float32)
+        nodata = tags["GDAL_NODATA"].value if "GDAL_NODATA" in tags else None
+
+    lon_step, lat_step = float(scale[0]), float(scale[1])
+    west, north = float(tie[3]), float(tie[4])
+    # Copernicus files are PixelIsPoint: the tie point is the centre of the first
+    # pixel, so its outer corner is half a cell further out. Reading it as the corner
+    # puts every height half a cell (about 15 m) off.
+    if geokeys.get(_RASTER_TYPE_KEY) == _PIXEL_IS_POINT:
+        west -= lon_step / 2
+        north += lat_step / 2
+
+    if nodata is not None:
+        try:
+            grid[grid == np.float32(float(str(nodata).strip("\x00 ")))] = np.nan
+        except (ValueError, OverflowError):
+            pass
+    # Float32 maximum is the usual no-data marker even when the tag cannot be parsed.
+    grid[~np.isfinite(grid) | (np.abs(grid) > 1e30)] = np.nan
+
+    kind = "terrain" if name in TERRAIN_MODELS else "surface"
+    return {
+        "name": name, "path": path, "kind": kind, "grid": grid,
+        "west": west, "north": north, "lon_step": lon_step, "lat_step": lat_step,
+        "east": west + grid.shape[1] * lon_step, "south": north - grid.shape[0] * lat_step,
+        # Copernicus flattens open water to exactly 0 m; a model with no-data at sea
+        # does not, and there 0 m is simply low ground.
+        "sea_is_zero": name.startswith(("COP", "Copernicus")),
+    }
+
+
+def _load_sources() -> list[dict[str, Any]]:
+    """The rasters the model reads, in the order they are searched."""
+    global _sources
+    if _sources is not None:
+        return _sources
+
+    import os
+
+    wanted = os.environ.get("DEM_SOURCE", "").strip()
+    downloads = {name: DEM_DIR / f"{name}.tif" for name in DEM_PREFERENCE}
+    if wanted and wanted.lower() != "tiles":
+        order = [wanted]
+    elif wanted.lower() == "tiles":
+        order = []
+    else:
+        order = [name for name in DEM_PREFERENCE if downloads[name].exists()][:1]
+
+    sources = [_read_raster(downloads[name], name) for name in order if downloads.get(name, Path()).exists()]
+    if not sources:
+        sources = [_read_raster(path, "Copernicus GLO-30 tile")
+                   for path in sorted(DATA_DIR.glob("Copernicus_DSM_COG_10_*_DEM.tif"))]
+    _sources = sources
+    return _sources
+
+
+def source_info() -> dict[str, Any]:
+    """Which DEM the model is reading, for the page to say so."""
+    sources = _load_sources()
+    if not sources:
+        return {"name": None, "kind": None, "files": []}
+    return {
+        "name": sources[0]["name"] if len(sources) == 1 else "Copernicus GLO-30 tiles",
+        "kind": sources[0]["kind"],
+        "files": [str(r["path"].relative_to(DATA_DIR.parent.parent)) for r in sources],
+    }
 
 
 def _tile_for(lat: float, lon: float) -> dict[str, Any] | None:
-    return _load_tile(math.floor(lat), math.floor(lon))
+    """The raster covering a point, or None off every one of them."""
+    for raster in _load_sources():
+        if raster["south"] <= lat <= raster["north"] and raster["west"] <= lon <= raster["east"]:
+            return raster
+    return None
 
 
 def _cell(tile: dict[str, Any], lat: float, lon: float) -> tuple[int, int] | None:
-    """Row and column of a point in a tile, or None if it is not on this tile.
+    """Row and column of a point in a raster, or None if it is not on it.
 
-    A point exactly on a tile's southern or eastern edge lands one row or column past
-    the end, so the last cell is used rather than the point being dropped: the tiles
-    share those lines.
+    A point exactly on a raster's southern or eastern edge lands one row or column past
+    the end, so the last cell is used rather than the point being dropped: tiles share
+    those lines.
     """
     grid = tile["grid"]
     row = int((tile["north"] - lat) / tile["lat_step"])
@@ -90,15 +162,42 @@ def _cell(tile: dict[str, Any], lat: float, lon: float) -> tuple[int, int] | Non
     return min(row, grid.shape[0] - 1), min(col, grid.shape[1] - 1)
 
 
+def _value(value: float) -> float | None:
+    return None if not np.isfinite(value) else float(value)
+
+
 def elevation(lat: float, lon: float) -> float | None:
-    """Ground level at a point, metres above the ellipsoid, or None off the tiles."""
+    """Ground level at a point, metres above the geoid (about mean sea level), or None
+    off the DEM or over water."""
     tile = _tile_for(lat, lon)
-    if tile is None:
-        return None
-    cell = _cell(tile, lat, lon)
+    cell = None if tile is None else _cell(tile, lat, lon)
+    return None if cell is None else _value(tile["grid"][cell])
+
+
+def ground_level(lat: float, lon: float) -> float | None:
+    """Road level at a point.
+
+    On a terrain model (GEDTM30) that is simply the DEM: buildings and trees are
+    already out of it. On a surface model a 30 m cell holding a building reads the
+    roof, metres above the street beside it; in a built-up block the road is the lowest
+    thing around, so the minimum over the 3 x 3 cells centred here stands in for it -
+    the morphological trick for pulling bare ground out of a surface model.
+    """
+    tile = _tile_for(lat, lon)
+    cell = None if tile is None else _cell(tile, lat, lon)
     if cell is None:
         return None
-    return float(tile["grid"][cell])
+    if tile["kind"] == "terrain":
+        return _value(tile["grid"][cell])
+    if "road" not in tile:
+        from scipy.ndimage import minimum_filter
+
+        # No-data must not win the minimum, so it is lifted out of reach and put back.
+        lifted = np.where(np.isfinite(tile["grid"]), tile["grid"], np.inf)
+        road = minimum_filter(lifted, size=3, mode="nearest")
+        road[~np.isfinite(tile["grid"])] = np.nan
+        tile["road"] = road
+    return _value(tile["road"][cell])
 
 
 def _window(lat: float, lon: float, radius_m: float) -> tuple[np.ndarray, float, tuple[int, int]] | None:
@@ -123,6 +222,106 @@ def _window(lat: float, lon: float, radius_m: float) -> tuple[np.ndarray, float,
         return None
 
     return grid[top:bottom, left:right], cell_lat_m * cell_lon_m, (row - top, col - left)
+
+
+def grid(south: float, north: float, west: float, east: float) -> dict[str, Any] | None:
+    """The DEM over a box, assembled from however many rasters it crosses.
+
+    With the Copernicus tiles Chennai sits across the 13th parallel and is split
+    between two of them; a download covers it in one. Either way the box comes back as
+    one grid. Cells no raster covers are NaN rather than zero, because zero is a real
+    height on this coast.
+    """
+    sources = [r for r in _load_sources()
+               if r["south"] < north and r["north"] > south and r["west"] < east and r["east"] > west]
+    if not sources:
+        return None
+    lat_step, lon_step = sources[0]["lat_step"], sources[0]["lon_step"]
+    rows = int(round((north - south) / lat_step))
+    cols = int(round((east - west) / lon_step))
+    out = np.full((rows, cols), np.nan, dtype=np.float32)
+
+    for raster in sources:
+        s, n = max(south, raster["south"]), min(north, raster["north"])
+        w, e = max(west, raster["west"]), min(east, raster["east"])
+        if s >= n or w >= e:
+            continue
+        # The pixel holding each edge, by the same floor rule as _cell(), so the grid
+        # and a point lookup agree on which pixel a place falls in.
+        first_row = math.floor((raster["north"] - n) / lat_step + 1e-9)
+        first_col = math.floor((w - raster["west"]) / lon_step + 1e-9)
+        block = raster["grid"][
+            first_row:first_row + int(round((n - s) / lat_step)),
+            first_col:first_col + int(round((e - w) / lon_step)),
+        ]
+        top = int(round((north - n) / lat_step))
+        left = int(round((w - west) / lon_step))
+        block = block[:rows - top, :cols - left]
+        out[top:top + block.shape[0], left:left + block.shape[1]] = block
+
+    return {"grid": out, "south": south, "north": north, "west": west, "east": east,
+            "lat_step": lat_step, "lon_step": lon_step,
+            "sea_is_zero": sources[0]["sea_is_zero"]}
+
+
+# Colour stops for heights, metres above the EGM2008 geoid (about mean sea level). Chennai's streets sit within a
+# few metres of the sea, so the ramp spends most of its colours on the bottom 10 m,
+# where the difference between two streets decides which one floods.
+ELEVATION_STOPS = (
+    (-2.0, (8, 48, 107)),
+    (2.0, (33, 113, 181)),
+    (5.0, (66, 171, 199)),
+    (8.0, (120, 198, 121)),
+    (12.0, (217, 214, 102)),
+    (18.0, (230, 150, 70)),
+    (30.0, (166, 97, 52)),
+    (60.0, (120, 70, 45)),
+)
+
+
+def relief_image(dem: dict[str, Any], opacity: float = 0.7) -> bytes:
+    """The DEM drawn as colour by height, shaded by slope, as a transparent PNG.
+
+    Colour answers "how high is this street"; the hillshade answers "which way does
+    the ground fall", which is what decides where water runs. Both are needed to read
+    a flat city, where the colour alone barely changes from one street to the next.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    heights = dem["grid"].astype(np.float64)
+    # Copernicus flattens open water to exactly 0 m. Left in, the Bay of Bengal is a
+    # quarter of this box and would be painted as the lowest - most flood-prone - land
+    # in the city, so it is left clear and the base map shows through.
+    valid = np.isfinite(heights)
+    if dem.get("sea_is_zero"):
+        valid &= heights != 0.0
+    filled = np.where(valid, heights, np.nanmin(heights) if valid.any() else 0.0)
+
+    levels = np.array([stop[0] for stop in ELEVATION_STOPS])
+    colours = np.array([stop[1] for stop in ELEVATION_STOPS], dtype=np.float64)
+    rgb = np.stack([np.interp(filled, levels, colours[:, band]) for band in range(3)], axis=-1)
+
+    # Hillshade, light from the north-west at 45 degrees, with the cell size in metres
+    # so a 1 m rise over 30 m reads as the gentle slope it is.
+    cell_y = dem["lat_step"] * M_PER_DEG
+    cell_x = dem["lon_step"] * M_PER_DEG * math.cos(math.radians((dem["south"] + dem["north"]) / 2))
+    dz_dy, dz_dx = np.gradient(filled, cell_y, cell_x)
+    # Vertical exaggeration: Chennai is so flat that true relief shades as a blank sheet.
+    exaggeration = 8.0
+    slope = np.arctan(exaggeration * np.hypot(dz_dx, dz_dy))
+    aspect = np.arctan2(-dz_dx, dz_dy)
+    azimuth, altitude = math.radians(315), math.radians(45)
+    shade = (math.sin(altitude) * np.cos(slope)
+             + math.cos(altitude) * np.sin(slope) * np.cos(azimuth - aspect))
+    rgb *= (0.55 + 0.45 * np.clip(shade, 0, 1))[..., None]
+
+    alpha = np.where(valid, int(round(255 * opacity)), 0)
+    rgba = np.dstack([np.clip(rgb, 0, 255), alpha]).astype(np.uint8)
+    buffer = BytesIO()
+    Image.fromarray(rgba, "RGBA").save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
 
 
 def fill_depth(elevations: np.ndarray, cell_area_m2: float, volume_m3: float) -> dict[str, float]:
@@ -181,8 +380,11 @@ def basin(lat: float, lon: float, radius_m: float = PONDING_RADIUS_M) -> dict[st
     if found is None:
         return None
     patch, cell_area, (row, col) = found
+    if not np.isfinite(patch[row, col]):
+        return None
 
-    ground = np.sort(patch.astype(np.float64).ravel())
+    values = patch.astype(np.float64).ravel()
+    ground = np.sort(values[np.isfinite(values)])
     counts = np.arange(1, ground.size)
     return {
         "ground": ground,
@@ -345,6 +547,30 @@ if __name__ == "__main__":
     assert street_pond(None, 100.0, 0.0)["depth_m"] == 0.0
 
     # And against the real tiles, if they are present.
+    city = grid(12.85, 13.25, 80.10, 80.35)
+    if city is not None:
+        # Whatever the source, the city is covered: no-data only where the sea is,
+        # and no seam along 13 degrees N where the tiles meet.
+        land = city["grid"][:, :int(0.6 * city["grid"].shape[1])]
+        assert np.isfinite(land).mean() > 0.97, "holes in the DEM over land"
+        seam = int(round((13.25 - 13.0) / city["lat_step"]))
+        assert abs(float(np.nanmean(city["grid"][seam - 1])) - float(np.nanmean(city["grid"][seam]))) < 3
+        # The grid and the point lookup must agree: the box edges need not fall on
+        # pixel edges, so the point's pixel is this cell or a neighbour of it.
+        row = int((13.25 - 13.0827) / city["lat_step"])
+        col = int((80.2707 - 80.10) / city["lon_step"])
+        near = city["grid"][row - 1:row + 2, col - 1:col + 2]
+        assert np.any(np.isclose(near, elevation(13.0827, 80.2707))), (near, elevation(13.0827, 80.2707))
+        png = relief_image(city)
+        assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 10_000
+        # Road level never sits above the surface it is read from.
+        for lat_, lon_ in ((13.0827, 80.2707), (13.04, 80.23), (12.98, 80.20)):
+            assert ground_level(lat_, lon_) <= elevation(lat_, lon_) + 1e-6
+        print(f"DEM source: {source_info()}")
+        print(f"Chennai DEM {city['grid'].shape[1]} x {city['grid'].shape[0]}, "
+              f"{np.nanmin(city['grid']):.1f} to {np.nanmax(city['grid']):.1f} m, "
+              f"relief image {len(png) / 1e6:.1f} MB")
+
     here = elevation(13.0827, 80.2707)          # Chennai Central
     if here is None:
         print("DEM tiles not found; formula checks passed")

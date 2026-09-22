@@ -590,6 +590,19 @@ button { font: inherit; cursor: pointer; }
 .drain-popup-key { color: var(--muted); font-weight: 600; white-space: nowrap; width: 42%; }
 .drain-popup-table tr:hover { background: var(--accent-soft); }
 
+/* Elevation legend, bottom-right of the map while the DEM layer is on. */
+.elev-legend {
+    padding: .5rem .65rem .45rem;
+    background: var(--glass); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    font-size: .7rem; min-width: 13rem;
+}
+.elev-title { font-weight: 800; margin-bottom: .3rem; }
+.elev-bar { height: .55rem; border-radius: 999px; }
+.elev-ticks { display: flex; justify-content: space-between; margin-top: .2rem; color: var(--muted); }
+
 /* Flood nowcast panel: the clock for the next three hours. */
 .flood-panel {
     padding: 1.1rem 1.15rem 1.25rem;

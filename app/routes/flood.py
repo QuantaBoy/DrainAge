@@ -19,9 +19,11 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
-from app.services import hydraulics, terrain
 from app.routes.drains import _catchment, _load_csv, _matches
+from app.routes.streets import CHENNAI_BBOX
+from app.services import hydraulics, street_flood, terrain
 
 router = APIRouter(prefix="/data-collection", tags=["Flood"])
 
@@ -139,6 +141,47 @@ def simulate(drains: list[dict[str, Any]], rain_series: list[float], strip_m: fl
     return ponded
 
 
+# The relief image is the same for every visitor and slow to draw, so it is drawn once.
+_relief: dict[str, Any] = {}
+
+
+def _relief_layer() -> dict[str, Any]:
+    if not _relief:
+        south, west, north, east = CHENNAI_BBOX
+        dem = terrain.grid(south, north, west, east)
+        if dem is None:
+            raise HTTPException(status_code=503, detail="No DEM tiles in app/data")
+        land = dem["grid"][(dem["grid"] == dem["grid"]) & (dem["grid"] != 0)]
+        _relief.update({
+            "png": terrain.relief_image(dem),
+            "bounds": [[south, west], [north, east]],
+            "min_m": round(float(land.min()), 1),
+            "max_m": round(float(land.max()), 1),
+            "median_m": round(float(sorted(land.ravel())[land.size // 2]), 1),
+        })
+    return _relief
+
+
+@router.get("/elevation", summary="Where the elevation layer goes, and how to read it")
+async def get_elevation() -> dict[str, Any]:
+    layer = await asyncio.to_thread(_relief_layer)
+    return {
+        "image": "/data-collection/elevation.png",
+        "bounds": layer["bounds"],
+        "range_m": [layer["min_m"], layer["max_m"]],
+        "median_m": layer["median_m"],
+        "stops": [{"m": m, "color": "#%02x%02x%02x" % rgb} for m, rgb in terrain.ELEVATION_STOPS],
+        "source": terrain.source_info(),
+    }
+
+
+@router.get("/elevation.png", summary="The DEM as a shaded-relief image")
+async def get_elevation_png() -> Response:
+    layer = await asyncio.to_thread(_relief_layer)
+    return Response(layer["png"], media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 @router.get("/nowcast", summary="Rainfall nowcast for the next three hours")
 async def get_nowcast(
     lat: float = Query(..., ge=-90, le=90),
@@ -158,6 +201,7 @@ async def get_flood_nowcast(
     rain_mm_h: float | None = Query(None, ge=0, le=500,
                                     description="Hold the rain at this rate instead of "
                                                 "using the nowcast, for what-if runs"),
+    streets: bool = Query(False, description="Also return the street stretches under water"),
 ) -> dict[str, Any]:
     all_drains = await asyncio.to_thread(_load_csv)
     selected = [d for d in all_drains if _matches(d["props"], {"ZONE": zone, "WARD": ward})]
@@ -179,6 +223,7 @@ async def get_flood_nowcast(
         simulate, selected, nowcast["rain_mm_h"], strip_m, runoff_coeff, step_seconds)
 
     features = []
+    wet_points = []
     worst_depth = 0.0
     for node, entry in ponded.items():
         drain = entry["drain"]
@@ -197,6 +242,18 @@ async def get_flood_nowcast(
 
         first = next((i for i, d in enumerate(depths) if d >= REPORT_DEPTH_M), None)
         props = drain["props"]
+        wet = {
+            "node": node, "lon": drain["outlet"][0], "lat": drain["outlet"][1],
+            # Road level, not the DEM cell: a manhole cell with a roof in it would put
+            # the water level metres too high and flood every street around it.
+            "ground_m": terrain.ground_level(drain["outlet"][1], drain["outlet"][0]),
+            # Shallower than reportable counts as dry, so a street is never drawn wet
+            # at a step its manhole is not.
+            "depth_m": [d if d >= REPORT_DEPTH_M else 0.0 for d in depths],
+            "volume_m3": entry["volume"],
+        }
+        wet_points.append(wet)
+        reaches, levels = street_flood.water_profile(wet)
         features.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": drain["outlet"]},
@@ -215,11 +272,22 @@ async def get_flood_nowcast(
                 "street_m": round(entry["street_m"], 1),
                 "ground_m": None if basin is None else round(basin["ground_here_m"], 2),
                 "peak_volume_m3": round(max(entry["volume"]), 1),
+                # How far along the road and how high the water stands, per step: what
+                # the street stretches around this manhole are cut against.
+                "reach_m": [round(r, 1) for r in reaches],
+                "level_m": [None if level is None else round(level, 2) for level in levels],
             },
         })
 
     features.sort(key=lambda f: f["properties"]["peak_depth_cm"], reverse=True)
+    extra: dict[str, Any] = {}
+    if streets:
+        stretches = await asyncio.to_thread(street_flood.flooded_streets, wet_points)
+        extra["streets"] = {"type": "FeatureCollection", "features": stretches}
+        extra["street_names"] = len({f["properties"]["name"] for f in stretches
+                                     if f["properties"]["name"]})
     return {
+        **extra,
         "type": "FeatureCollection",
         "features": features,
         "nowcast": nowcast,
