@@ -1,0 +1,197 @@
+ward,ward_number,base_map_sheet,pdf_in_repo,zone_on_sheet,zone_label,zone_name_on_sheet,zone_in_survey,drains_in_survey,surveyed_length_m,check
+N001,1,no,no,,,,N01,69,11884.0,survey only: no base-map sheet here
+N002,2,no,no,,,,N01,84,9545.3,survey only: no base-map sheet here
+N004,4,no,no,,,,N01,57,8484.2,survey only: no base-map sheet here
+N005,5,no,no,,,,N01,3,2844.2,survey only: no base-map sheet here
+N006,6,no,no,,,,N01,82,13920.4,survey only: no base-map sheet here
+N007,7,no,no,,,,N01,42,7084.3,survey only: no base-map sheet here
+N008,8,no,no,,,,N01,4,857.6,survey only: no base-map sheet here
+N009,9,no,no,,,,N01,6,1896.9,survey only: no base-map sheet here
+N010,10,no,no,,,,N01,6,1843.0,survey only: no base-map sheet here
+N011,11,no,no,,,,N01,6,2808.3,survey only: no base-map sheet here
+N012,12,no,no,,,,N01,2,1040.6,survey only: no base-map sheet here
+N014,14,no,no,,,,N01,4,1376.9,survey only: no base-map sheet here
+N015,15,no,no,,,,N02,7,1840.5,survey only: no base-map sheet here
+N016,16,no,no,,,,N02,17,7517.8,survey only: no base-map sheet here
+N017,17,no,no,,,,N02,5,4438.8,survey only: no base-map sheet here
+N018,18,no,no,,,,N02,82,10701.3,survey only: no base-map sheet here
+N019,19,no,no,,,,N02,34,10063.1,survey only: no base-map sheet here
+N020,20,no,no,,,,N02,51,8027.9,survey only: no base-map sheet here
+N021,21,no,no,,,,N02,44,9364.3,survey only: no base-map sheet here
+N022,22,no,no,,,,N03,50,9023.1,survey only: no base-map sheet here
+N023,23,no,no,,,,N03,3,794.1,survey only: no base-map sheet here
+N024,24,no,no,,,,N03,11,5272.4,survey only: no base-map sheet here
+N025,25,no,no,,,,N03,19,8701.8,survey only: no base-map sheet here
+N026,26,no,no,,,,N03,57,11776.5,survey only: no base-map sheet here
+N027,27,no,no,,,,N03,26,4995.1,survey only: no base-map sheet here
+N028,28,yes,yes,N03,Zone III – Madhavaram,Madhavaram,N03,3,2972.4,agrees
+N029,29,yes,yes,N03,Zone III – Madhavaram,Madhavaram,N03,45,5688.7,agrees
+N030,30,no,no,,,,N03,24,5079.2,survey only: no base-map sheet here
+N031,31,no,no,,,,N03,25,5602.0,survey only: no base-map sheet here
+N032,32,no,no,,,,N03,39,9641.3,survey only: no base-map sheet here
+N033,33,yes,yes,N03,Zone III – Madhavaram,Madhavaram,N04,35,6323.2,zone disagrees
+N034,34,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,54,14698.2,agrees
+N035,35,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,,0,0.0,sheet only: ward not in the survey
+N036,36,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,41,9826.1,agrees
+N037,37,no,no,,,,N04,53,17721.1,survey only: no base-map sheet here
+N038,38,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,27,10874.3,agrees
+N039,39,no,no,,,,N04,13,5353.7,survey only: no base-map sheet here
+N040,40,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,13,4273.4,agrees
+N041,41,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,12,2815.3,agrees
+N042,42,no,no,,,,N04,10,2966.3,survey only: no base-map sheet here
+N043,43,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,10,3332.4,agrees
+N044,44,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,30,6975.8,agrees
+N045,45,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,34,8634.4,agrees
+N046,46,no,no,,,,N04,28,8023.3,survey only: no base-map sheet here
+N047,47,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,14,3245.4,agrees
+N048,48,yes,yes,N04,Zone IV – Tondiarpet,Tondiarpet,N04,16,3832.4,agrees
+N049,49,no,no,,,,N05,22,5332.1,survey only: no base-map sheet here
+N050,50,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,39,11471.5,agrees
+N052,52,no,no,,,,N05,17,3794.9,survey only: no base-map sheet here
+N053,53,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,32,7263.0,agrees
+N054,54,no,no,,,,N05,11,3071.3,survey only: no base-map sheet here
+N055,55,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,19,4013.5,agrees
+N056,56,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,13,3348.8,agrees
+N057,57,no,no,,,,N05,17,5271.9,survey only: no base-map sheet here
+N058,58,no,no,,,,N05,40,16210.6,survey only: no base-map sheet here
+N059,59,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,32,10764.1,agrees
+N060,60,no,no,,,,N05,27,11014.3,survey only: no base-map sheet here
+N061,61,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,45,16245.2,agrees
+N062,62,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,33,6249.8,agrees
+N063,63,yes,yes,N05,Zone V – Royapuram,Royapuram,N05,22,8587.1,agrees
+N064,64,no,no,,,,N06,103,17983.4,survey only: no base-map sheet here
+N065,65,no,no,,,,N06,58,12936.1,survey only: no base-map sheet here
+N066,66,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,84,19822.4,agrees
+N067,67,no,no,,,,N06,38,8662.8,survey only: no base-map sheet here
+N068,68,no,no,,,,N06,33,7258.8,survey only: no base-map sheet here
+N069,69,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,26,7010.6,agrees
+N070,70,no,no,,,,N06,30,7843.3,survey only: no base-map sheet here
+N071,71,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,10,2546.8,agrees
+N072,72,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,15,2758.7,agrees
+N073,73,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,24,5370.7,agrees
+N074,74,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,30,7286.4,agrees
+N075,75,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,14,2191.1,agrees
+N076,76,no,no,,,,N06,19,4292.1,survey only: no base-map sheet here
+N077,77,yes,yes,N06,Zone VI – Thiru Vi Ka Nagar,Thiru Vi Ka Nagar,N06,19,4929.4,agrees
+N078,78,no,no,,,,N06,19,5039.0,survey only: no base-map sheet here
+N079,79,no,no,,,,N07,8,1486.5,survey only: no base-map sheet here
+N080,80,no,no,,,,N07,58,12187.8,survey only: no base-map sheet here
+N081,81,no,no,,,,N07,106,19270.2,survey only: no base-map sheet here
+N082,82,no,no,,,,N07,53,13677.7,survey only: no base-map sheet here
+N083,83,no,no,,,,N07,40,8928.3,survey only: no base-map sheet here
+N084,84,no,no,,,,N07,101,20485.1,survey only: no base-map sheet here
+N085,85,no,no,,,,N07,144,21049.7,survey only: no base-map sheet here
+N086,86,no,no,,,,N07,145,47521.2,survey only: no base-map sheet here
+N087,87,no,no,,,,N07,120,15942.3,survey only: no base-map sheet here
+N088,88,no,no,,,,N07,75,13274.9,survey only: no base-map sheet here
+N089,89,no,no,,,,N07,62,14517.5,survey only: no base-map sheet here
+N090,90,yes,yes,N07,Zone VII – Ambattur,Ambattur,N07,33,9328.2,agrees
+N091,91,no,no,,,,N07,43,11713.2,survey only: no base-map sheet here
+N092,92,no,no,,,,N07,42,13578.4,survey only: no base-map sheet here
+N093,93,yes,yes,N07,Zone VII – Ambattur,Ambattur,N07,46,12599.5,agrees
+N094,94,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,56,13750.7,agrees
+N095,95,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,93,21518.2,agrees
+N096,96,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,17,8708.9,agrees
+N097,97,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,24,4136.1,agrees
+N098,98,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,12,3723.1,agrees
+N099,99,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,47,15541.0,agrees
+N100,100,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,58,20651.7,agrees
+N101,101,no,no,,,,N08,81,20931.8,survey only: no base-map sheet here
+N102,102,no,no,,,,N08,48,11542.0,survey only: no base-map sheet here
+N103,103,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,48,13802.2,agrees
+N104,104,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,24,6229.1,agrees
+N105,105,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,37,6629.9,agrees
+N106,106,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,47,7644.6,agrees
+N107,107,yes,yes,N08,Zone VIII – Anna Nagar,Anna Nagar,N08,43,8445.7,agrees
+N108,108,no,no,,,,N08,43,8937.0,survey only: no base-map sheet here
+N109,109,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,36,8258.9,agrees
+N110,110,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,46,10421.7,agrees
+N111,111,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,48,14586.4,agrees
+N112,112,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,48,9895.0,agrees
+N113,113,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,54,14971.9,agrees
+N114,114,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,27,6662.4,agrees
+N115,115,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,17,4193.2,agrees
+N116,116,no,no,,,,N09,12,2804.3,survey only: no base-map sheet here
+N117,117,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,63,16825.2,agrees
+N118,118,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,65,14667.4,agrees
+N119,119,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,42,8976.0,agrees
+N120,120,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,14,3426.7,agrees
+N121,121,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,19,5266.9,agrees
+N122,122,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,63,14581.8,agrees
+N123,123,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,72,17151.5,agrees
+N124,124,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,32,4949.7,agrees
+N125,125,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,20,2936.9,agrees
+N126,126,yes,yes,N09,Zone IX – Teynampet,Teynampet,N09,24,4713.0,agrees
+N127,127,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,89,17169.4,agrees
+N128,128,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,75,16991.9,agrees
+N129,129,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,66,18497.8,agrees
+N130,130,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,29,10110.1,agrees
+N131,131,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,45,14943.1,agrees
+N132,132,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,62,21326.6,agrees
+N133,133,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,43,11263.8,agrees
+N134,134,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,61,15339.7,agrees
+N135,135,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,51,13074.8,agrees
+N136,136,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,54,21959.0,agrees
+N137,137,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,23,7971.8,agrees
+N138,138,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,21,5867.3,agrees
+N139,139,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,18,3773.8,agrees
+N140,140,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,26,6721.3,agrees
+N141,141,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,44,13466.3,agrees
+N142,142,yes,yes,N10,Zone X – Kodambakkam,Kodambakkam,N10,16,5089.3,agrees
+N143,143,no,no,,,,N11,52,16133.2,survey only: no base-map sheet here
+N144,144,no,no,,,,N11,70,12065.4,survey only: no base-map sheet here
+N145,145,yes,yes,N11,Zone XI – Valasaravakkam,Valasaravakkam,N11,142,27770.3,agrees
+N146,146,no,no,,,,N11,61,14463.6,survey only: no base-map sheet here
+N147,147,no,no,,,,N11,153,26973.4,survey only: no base-map sheet here
+N148,148,no,no,,,,N11,156,22198.2,survey only: no base-map sheet here
+N149,149,no,no,,,,N11,126,25193.8,survey only: no base-map sheet here
+N150,150,no,no,,,,N11,179,39078.9,survey only: no base-map sheet here
+N151,151,no,no,,,,N11,129,20818.3,survey only: no base-map sheet here
+N152,152,no,no,,,,N11,85,16193.2,survey only: no base-map sheet here
+N153,153,no,no,,,,N11,163,29509.3,survey only: no base-map sheet here
+N154,154,no,no,,,,N11,71,13343.7,survey only: no base-map sheet here
+N155,155,no,no,,,,N11,83,16221.2,survey only: no base-map sheet here
+N156,156,no,no,,,,N12,196,38015.3,survey only: no base-map sheet here
+N157,157,no,no,,,,N12,86,12749.2,survey only: no base-map sheet here
+N158,158,no,no,,,,N12,64,10568.9,survey only: no base-map sheet here
+N159,159,no,no,,,,N12,22,6101.7,survey only: no base-map sheet here
+N160,160,yes,yes,N12,Zone XII – Alandur,Alandur,N12,66,10675.9,agrees
+N161,161,no,no,,,,N12,92,14477.3,survey only: no base-map sheet here
+N162,162,no,no,,,,N12,128,20730.5,survey only: no base-map sheet here
+N163,163,no,no,,,,N12,71,10740.3,survey only: no base-map sheet here
+N164,164,no,no,,,,N12,93,16118.4,survey only: no base-map sheet here
+N165,165,no,no,,,,N12,155,19455.6,survey only: no base-map sheet here
+N166,166,no,no,,,,N12,100,14957.7,survey only: no base-map sheet here
+N167,167,no,no,,,,N12,159,27214.7,survey only: no base-map sheet here
+N168,168,no,no,,,,N14,156,22436.2,survey only: no base-map sheet here
+N169,169,no,no,,,,N14,173,26836.8,survey only: no base-map sheet here
+N170,170,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,36,13738.8,agrees
+N171,171,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,45,13104.7,agrees
+N172,172,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,50,11320.0,agrees
+N173,173,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,49,12378.0,agrees
+N174,174,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,14,10733.6,agrees
+N175,175,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,85,23798.0,agrees
+N176,176,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,39,10518.9,agrees
+N177,177,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,72,18507.1,agrees
+N178,178,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,52,12547.6,agrees
+N179,179,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,107,23748.9,agrees
+N180,180,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,38,13182.9,agrees
+N181,181,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,19,5723.4,agrees
+N182,182,yes,yes,N13,Zone XIII – Adyar,Adyar,N13,41,7284.2,agrees
+N183,183,no,no,,,,N14,101,19852.6,survey only: no base-map sheet here
+N184,184,no,no,,,,N14,116,17304.7,survey only: no base-map sheet here
+N185,185,no,no,,,,N14,160,21411.5,survey only: no base-map sheet here
+N186,186,no,no,,,,N14,134,20443.4,survey only: no base-map sheet here
+N187,187,no,no,,,,N14,45,7196.7,survey only: no base-map sheet here
+N188,188,no,no,,,,N14,146,33379.7,survey only: no base-map sheet here
+N189,189,no,no,,,,N14,40,7867.7,survey only: no base-map sheet here
+N190,190,no,no,,,,N14,25,4707.4,survey only: no base-map sheet here
+N191,191,no,no,,,,N14,109,15176.6,survey only: no base-map sheet here
+N192,192,no,no,,,,N15,55,9072.9,survey only: no base-map sheet here
+N193,193,no,no,,,,N15,51,10861.7,survey only: no base-map sheet here
+N194,194,no,no,,,,N15,61,15345.2,survey only: no base-map sheet here
+N195,195,no,no,,,,N15,31,5751.8,survey only: no base-map sheet here
+N196,196,no,no,,,,N15,20,3996.0,survey only: no base-map sheet here
+N197,197,no,no,,,,N15,36,7957.7,survey only: no base-map sheet here
+N198,198,no,no,,,,N15,5,790.2,survey only: no base-map sheet here
+N200,200,no,no,,,,N15,53,7664.3,survey only: no base-map sheet here
