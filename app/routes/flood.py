@@ -215,11 +215,67 @@ def _ponding_model() -> dict[str, Any]:
     return model
 
 
+_hollow_capacity: dict[str, Any] = {}
+
+
+def drain_capacity_by_hollow(model: dict[str, Any]) -> np.ndarray:
+    """What the surveyed drains carry out of each DEM hollow's catchment, m³/s.
+
+    The rain model fills a hollow from the land that drains into it; this is what
+    empties it. Every drain sits in one of those catchments, and the ones that carry
+    water out of it are its outfalls - the drains nothing else runs out of. Their
+    surveyed conveyance is the rate the hollow can be emptied at, so a street with a
+    large clear drain below it clears while one with a small or silted drain stays wet.
+
+    The survey does not reach every hollow. Rather than assume those have no drainage
+    (which floods them for ever) or invent a rate for them, they are given the rate
+    the surveyed part of the city has: its total outfall conveyance over the total
+    catchment those outfalls serve. Measured, not guessed, and one aggregate rather
+    than a median of ratios that tiny catchments with a large outfall would skew.
+
+    ponytail: outfall conveyance, not an inlet capacity. A drain can only take water
+    the gully gratings actually reach, and the survey does not record those; where a
+    hollow's water cannot get into the drain beside it, this is optimistic.
+    """
+    if not _hollow_capacity:
+        basins = model["basins"]
+        rows, cols = basins.shape
+        capacity = np.zeros(model["sea"] + 1)
+        for drain in _load_csv():
+            if not drain["is_outfall"]:
+                continue
+            rate = drain["capacity"]["effective_capacity_m3s"]
+            if rate <= 0:
+                continue
+            lon, lat = drain["outlet"]
+            row = math.floor((model["north"] - lat) / model["lat_step"])
+            col = math.floor((lon - model["west"]) / model["lon_step"])
+            if 0 <= row < rows and 0 <= col < cols:
+                capacity[basins[row, col]] += rate
+
+        catchment = model["catchment_m2"]
+        surveyed = (capacity > 0) & (catchment > 0)
+        typical = (float(capacity[surveyed].sum() / catchment[surveyed].sum())
+                   if surveyed.any() else 0.0)
+        filled = np.where(surveyed, capacity, catchment * typical)
+        # The sea and the land between hollows hold nothing to drain.
+        filled[0] = filled[model["sea"]] = 0.0
+        _hollow_capacity.update({
+            "m3s": filled,
+            "surveyed": int(surveyed.sum()),
+            "assumed": int(((filled > 0) & ~surveyed).sum()),
+            # The surveyed rate, as mm/h over the catchment it drains.
+            "typical_mm_h": round(typical * 3.6e6, 1),
+        })
+    return _hollow_capacity["m3s"]
+
+
 def warm_ponding() -> None:
     """Build the rain model, the street sample points and the ward index ahead of use."""
     model = _ponding_model()
     rain_ponding._street_cells(model)
     _place_index()
+    drain_capacity_by_hollow(model)
 
 
 # The rain-on-streets forecast runs in 5 minute steps across the 3 hour window.
@@ -355,12 +411,20 @@ _RAIN_MM_H = Query(None, ge=0, le=500, description="Hold the rain at this rate f
                                                      "instead of the nowcast, for what-if runs")
 # What the drains take off every catchment. 20 mm/h is a working figure for drains that
 # are open and clear, not a surveyed one; 0 is a network that is full or blocked.
-_DRAIN_MM_H = Query(20.0, ge=0, le=200, description="Rain the drains carry away, mm/h")
+# How much of each drain's surveyed conveyance is working: 1 is the survey as built,
+# 0.5 half silted, 0 a network that is full or blocked.
+_DRAIN_CONDITION = Query(1.0, ge=0, le=1, description="Share of the surveyed drain "
+                                                      "capacity that is working (1 = as surveyed)")
+# Only where the survey reaches no drain out of a hollow.
+_DRAIN_MM_H = Query(0.0, ge=0, le=200, description="Override the drainage everywhere with "
+                                                   "a flat rate, mm/h; 0 uses the survey")
 
 
 def _run_ponding(model: dict[str, Any], rain: dict[str, Any], runoff_coeff: float,
-                 drain_mm_h: float) -> Any:
-    return rain_ponding.simulate(model, rain["rain_mm"], runoff_coeff, drain_mm_h, rain["step_minutes"])
+                 drain_mm_h: float, drain_condition: float) -> Any:
+    capacity = drain_capacity_by_hollow(model) * drain_condition
+    return rain_ponding.simulate(model, rain["rain_mm"], runoff_coeff, drain_mm_h,
+                                 rain["step_minutes"], capacity)
 
 
 @router.get("/rain-ponding", summary="Depth at a coordinate every 5 minutes for 3 hours, from the DEM")
@@ -370,16 +434,19 @@ async def get_rain_ponding(
     rain_mm_h: float | None = _RAIN_MM_H,
     runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1),
     drain_mm_h: float = _DRAIN_MM_H,
+    drain_condition: float = _DRAIN_CONDITION,
 ) -> dict[str, Any]:
     model = await asyncio.to_thread(_ponding_model)
     rain = await _rain_steps(lat, lon, rain_mm_h)
-    levels = await asyncio.to_thread(_run_ponding, model, rain, runoff_coeff, drain_mm_h)
+    levels = await asyncio.to_thread(_run_ponding, model, rain, runoff_coeff,
+                                     drain_mm_h, drain_condition)
     result = rain_ponding.at(model, lat, lon, levels, rain["step_minutes"],
                              REPORT_DEPTH_M, IMPASSABLE_DEPTH_M)
     if result is None:
         raise HTTPException(status_code=404, detail="Outside the DEM, or over the sea")
     rain.pop("rain_mm")
-    return {**result, "rain": rain, "runoff_coeff": runoff_coeff, "drain_mm_h": drain_mm_h}
+    return {**result, "rain": rain, "runoff_coeff": runoff_coeff,
+            "drain_condition": drain_condition, "drain_mm_h": drain_mm_h}
 
 
 @router.get("/rain-ponding/streets",
@@ -390,6 +457,7 @@ async def get_rain_ponding_streets(
     rain_mm_h: float | None = _RAIN_MM_H,
     runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1),
     drain_mm_h: float = _DRAIN_MM_H,
+    drain_condition: float = _DRAIN_CONDITION,
     min_depth_cm: float = Query(REPORT_DEPTH_M * 100, ge=1, le=500),
     zone: str | None = Query(None, description="Only streets in this zone, e.g. N07"),
     ward: str | None = Query(None, description="Only streets in this ward, e.g. N082"),
@@ -399,7 +467,7 @@ async def get_rain_ponding_streets(
     impassable = IMPASSABLE_DEPTH_M * 100
 
     def run() -> tuple[list[dict[str, Any]], dict[str, list[float]], list[dict[str, Any]]]:
-        levels = _run_ponding(model, rain, runoff_coeff, drain_mm_h)
+        levels = _run_ponding(model, rain, runoff_coeff, drain_mm_h, drain_condition)
         stretches, water = rain_ponding.flooded_streets(
             model, levels, rain["step_minutes"], min_depth_cm / 100, IMPASSABLE_DEPTH_M)
         _label_places(stretches)
@@ -428,7 +496,13 @@ async def get_rain_ponding_streets(
         # vertex at step i is water[hollow][i] - ground_m.
         "water_level_m": water,
         "rain": rain,
-        "runoff_coeff": runoff_coeff, "drain_mm_h": drain_mm_h,
+        "runoff_coeff": runoff_coeff,
+        "drain_condition": drain_condition, "drain_mm_h": drain_mm_h,
+        "drainage": {
+            "hollows_from_the_survey": _hollow_capacity["surveyed"],
+            "hollows_at_the_surveyed_rate": _hollow_capacity["assumed"],
+            "surveyed_rate_mm_h": _hollow_capacity["typical_mm_h"],
+        },
         "stretches": len(stretches),
         "named_streets": len(named),
         "impassable_streets": sum(1 for r in named if r["max_depth_cm"] >= impassable),

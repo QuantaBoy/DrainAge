@@ -133,16 +133,28 @@ def water_levels(model: dict[str, Any], volume_m3: np.ndarray) -> np.ndarray:
 
 
 def simulate(model: dict[str, Any], rain_mm: list[float], runoff_coeff: float,
-             drain_mm_h: float, step_minutes: float) -> np.ndarray:
+             drain_mm_h: float, step_minutes: float,
+             drain_m3s: np.ndarray | None = None) -> np.ndarray:
     """Water level in every hollow at the end of every step, shape (steps, hollows).
 
     `rain_mm` is the rain that falls in each step, taken as falling evenly over the
     city. Water builds while the runoff arriving is more than the drains take and goes
     down once it is less, so a street floods after the rain starts, peaks after it
     peaks, and clears after it stops.
+
+    `drain_m3s` is what the surveyed drains carry out of each hollow, one rate per
+    hollow, from app/routes/flood.py. Where it is None, or zero for a hollow the
+    survey does not reach, `drain_mm_h` stands in as a flat rate over the catchment.
     """
+    step_seconds = step_minutes * 60.0
     drained_m = drain_mm_h / 1000.0 * step_minutes / 60.0
     catchment = model["catchment_m2"]
+    # Per step, in m³: what the drains below each hollow can take away.
+    drained_m3 = np.full_like(catchment, np.nan) if drain_m3s is None else drain_m3s * step_seconds
+    if drain_m3s is not None:
+        # A hollow with no surveyed drain falls back to the flat allowance rather than
+        # being treated as having no drainage at all.
+        drained_m3 = np.where(drain_m3s > 0, drained_m3, catchment * drained_m)
     # Rain on the far edge of a catchment takes time to run to the hollow. Each hollow
     # takes its runoff spread evenly over its time of concentration: the rain of the
     # last n steps, averaged, where n is how long water takes to cross the catchment.
@@ -153,7 +165,9 @@ def simulate(model: dict[str, Any], rain_mm: list[float], runoff_coeff: float,
     levels = []
     for step in range(len(rain_mm)):
         arriving_mm = (fallen[step + 1] - fallen[np.maximum(0, step + 1 - lag)]) / lag
-        gain = catchment * (arriving_mm / 1000.0 * runoff_coeff - drained_m)
+        arriving_m3 = catchment * (arriving_mm / 1000.0 * runoff_coeff)
+        taken = catchment * drained_m if drain_m3s is None else drained_m3
+        gain = arriving_m3 - taken
         # Past the spill point the water runs on out of the model; it is not held
         # back to delay the hollow emptying later.
         volume = np.clip(volume + gain, 0.0, model["capacity_m3"])
