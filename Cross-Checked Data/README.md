@@ -1,116 +1,97 @@
 # Cross-Checked Data
 
-The data checks behind the DEM integration and the rain-on-streets model: what was
-compared, against what, and what was decided because of it.
+Data checked against official sources, ward by ward and point by point, with the
+result of each check kept here as evidence. Where two official sources disagree, the
+site shows the surveyed value and flags the disagreement; it never silently corrects
+either one.
 
-Every CSV here except `dem_points.csv` is produced by `cross_check.py`. Re-run it after
-changing a DEM, a model setting or a data file:
+Model tuning runs (DEM smoothing, waterway burning, rain feeds) are **not** here;
+they are in `Model Checks/`.
 
-```
-python "Cross-Checked Data/cross_check.py"
-```
-
-It needs the DEMs from `fetch_dem.py` (`app/data/dem/`) and the street and waterway
-caches the app builds in `app/data/`. Check 5 calls Open-Meteo, so it records the
-forecast at the moment it runs.
-
-| File | Check |
+| File | What it is |
 |---|---|
-| `dem_points.csv` | The point file that was supplied, kept as received |
-| `dem_points_vs_dem.csv` | 1. That file against the DEMs the app reads |
-| `dem_sources_gedtm30_vs_cop30.csv` | 2. The two DEMs against each other |
-| `dem_smoothing_check.csv` | 3. How much DEM smoothing the rain model uses |
-| `waterway_burning_check.csv` | 4. How deep canals are burned into the DEM |
-| `rain_feeds_15min_vs_hourly.csv` | 5. The two Open-Meteo rain feeds against each other |
+| `ward_cross_check.py` | Re-runs the GCC ward check |
+| `gcc_wards_vs_survey.csv` | Every ward: what the base-map sheet says, what the survey says |
+| `data_cross_check.py` | Re-runs the elevation checks |
+| `dem_points.csv` | The elevation point file supplied, kept exactly as received |
+| `dem_points_vs_dem.csv` | That file against both DEMs, point by point |
+| `dem_sources_gedtm30_vs_cop30.csv` | The two DEMs against each other |
 
-## 1. `dem_points.csv`: rejected
+```
+python "Cross-Checked Data/ward_cross_check.py"
+python "Cross-Checked Data/data_cross_check.py"
+```
 
-1,644 points, 0.02° apart (about 2.2 km), 12.0-14.0° N, 80.0-80.54° E.
+## 1. GCC ward base maps vs the drain survey
 
-- **Wrong vertical datum.** On the 238 land points inside the app's DEM, the file is a
-  steady **92.1 m below GEDTM30** (median, standard deviation 5.0 m). That offset is
-  the geoid height at Chennai, so these are heights above the WGS 84 ellipsoid, not
-  above sea level. Example: 13.26° N, 80.10° E reads −72.5 m in the file and 17.2 m
-  in GEDTM30.
-- **Noise over the sea.** East of about 80.3° E it runs from −399.6 to +1107.0 m.
-- **Too coarse.** One point per 2.2 km cannot separate one street from the next.
+Two official sources for the same 196 wards:
 
-**Decision:** not used. The app reads GEDTM30 at 1 arc-second (about 30 m), in
-metres above mean sea level.
+- **`Ward/*.pdf`** - the storm water drain base-map sheets produced for the Greater
+  Chennai Corporation under the Real Time Flood Forecasting SDSS project (SECON-JBA,
+  funded through TNUIFSL). These are the paper source the survey was digitised from.
+  Each sheet is a raster page with a text title block and no vector geometry, so what
+  is read from it is the ward and zone printed there, indexed in
+  `app/data/ward_sheets.json`.
+- **`gcc_storm_water_drains (1).csv`** - the digitised drain survey the site maps,
+  sizes hydraulically and floods.
 
-## 2. GEDTM30 against COP30
+| Result | Wards |
+|---|---|
+| Both sources present and agreeing | 90 |
+| **Zone disagrees** | **1** |
+| Sheet here, ward absent from the survey | 1 |
+| In the survey, no sheet in this repository | 104 |
+| **Total wards known to either source** | **196** |
 
-Over the Chennai box, on land (COP30 sets the sea to exactly 0 m, so those cells are
-left out):
+Wards in the survey: 195. Base-map sheets indexed: 92, and all 92 PDFs are in `Ward/`.
+91 wards have both.
+
+**The two disagreements, both carried through to the site rather than patched:**
+
+- **Ward 33** - the sheet's title block puts it in Zone III (Madhavaram, `N03`); the
+  survey rows put it in `N04`. 35 drains are affected. The drain popup shows the
+  surveyed zone and flags the disagreement.
+- **Ward 35** - a sheet exists (Zone IV, Tondiarpet) but the survey holds no drains
+  for it: a gap in the digitisation, not a ward without drains.
+
+The 104 wards with no sheet are wards whose sheets are not in this repository; the
+survey still covers them, and the site reports them with no base map to link.
+
+## 2. The supplied elevation points vs the DEMs: rejected
+
+`dem_points.csv`, 1,644 points 0.02° apart (about 2.2 km), 12.0-14.0° N, 80.0-80.54° E.
+
+- **Wrong vertical datum.** Over the 238 land points inside the app's Chennai box the
+  file sits a steady **92.1 m below GEDTM30** (median; standard deviation 5.0 m). That
+  offset is the geoid height at Chennai, so these are heights above the WGS 84
+  ellipsoid, not above sea level. At 13.26° N, 80.10° E the file reads −72.5 m where
+  GEDTM30 reads 17.2 m.
+- **Noise over the sea**, from −399.6 to +1107.0 m east of about 80.3° E.
+- **Too coarse** at 2.2 km spacing to tell one street from the next.
+
+**Not used.** The app reads GEDTM30 at 1 arc-second (about 30 m) above mean sea level.
+
+## 3. GEDTM30 vs COP30
+
+Both from OpenTopography, compared over the app's Chennai box on land (COP30 flattens
+the sea to exactly 0 m, so those cells are excluded):
 
 | Measure | Value |
 |---|---|
 | Median COP30 − GEDTM30 | 1.00 m |
 | 5th / 95th percentile | −0.27 m / 3.65 m |
 
-COP30 is a surface model (roofs and trees included); GEDTM30 is bare earth. COP30
-reading about 1 m higher, and up to about 4 m higher in built-up areas, is what that
-difference should look like, and the two agree otherwise.
+COP30 is a surface model (roofs and canopy included), GEDTM30 is bare earth, so COP30
+reading about a metre higher, and up to about 4 m higher in built-up blocks, is the
+expected difference. **GEDTM30 is the default** (`DEM_SOURCE` in `.env` overrides it).
 
-**Decision:** GEDTM30 is the default (`DEM_SOURCE` in `.env` can change it).
+## Still to be cross-checked
 
-## 3. DEM smoothing
-
-At 30 m, GEDTM30 in dense blocks such as T. Nagar jumps 3-5 m between neighbouring
-cells where buildings bleed through. Filling every such pit to its rim put metres of
-"water" on streets. A median filter removes the pits, but too wide a filter also
-erases real lakes. Test: 100 mm of rain, drains full, waterways burned 2 m.
-
-| Median filter | Hollows | Venkatanarayana Road | Pallikaranai marsh | Porur lake |
-|---|---|---|---|---|
-| none | 28,281 | 371 cm | 1,370 cm | 490 cm |
-| **3 × 3 (90 m)** | **9,309** | **30 cm** | **1,126 cm** | **301 cm** |
-| 5 × 5 | 5,031 | 0 cm | 414 cm | 50 cm |
-| 7 × 7 | 3,275 | 0 cm | 20 cm | 6 cm |
-
-**Decision:** 3 × 3 (`SMOOTH_CELLS = 3` in `app/services/rain_ponding.py`). It cuts
-the T. Nagar spike by a factor of 12 and keeps Pallikaranai and Porur. At 5 × 5, Porur
-lake starts to vanish. The marsh and lake depths are their own basins filling, not
-street water.
-
-## 4. Burning waterways into the DEM
-
-Road embankments and culverts across a canal read as dams at 30 m, so the canal
-upstream of each one became a closed "lake" and flooded the streets beside it. The
-574 rivers, canals and nullahs in OpenStreetMap are lowered into the DEM so they
-drain. Test: 60 mm of rain, drains taking 20 mm/h.
-
-| Burn depth | Hollows | 5th Street, Kilpauk (by Otteri Nullah) |
-|---|---|---|
-| none | 8,828 | 212 cm |
-| **2 m** | **9,309** | **51 cm** |
-| 4 m | 9,447 | 0 cm |
-
-**Decision:** 2 m (`BURN_M = 2.0`). It removes most of the false canal lake; 4 m adds
-little elsewhere. Depths are still measured against the unburned ground, so a road
-along a canal bank is never measured from the channel bed. Bridges (1,011 OSM ways
-tagged `bridge`) are left out of the street network for the same reason: the DEM
-under a bridge is the river.
-
-## 5. Rain feeds
-
-The "Rain movement" map (hourly forecast) and the rain-on-streets forecast (15-minute
-nowcast) both come from Open-Meteo. The check sums the 15-minute values into hours
-and sets them next to the hourly values for central Chennai.
-
-At the last run the two agreed hour for hour (both 0.0 mm). Because both come from
-the same provider, they should always agree up to rounding. OpenWeather's "Rain" tile
-layer is a different provider and can differ from both.
-
-The same work found and fixed a clock bug: the 15-minute feed's first slot can start
-behind the real time, and the page had been labelling "+5 min" off that stale slot
-(10:35 shown at 11:18). The feed is now cut to start at the current 15 minutes.
-
-## Not yet checked
-
-- **Depths and timings against a real flood.** No run has been compared with streets
-  recorded under water in a real event (GCC waterlogging reports, Cyclone Michaung in
-  December 2023, December 2015). Until then, the order in which streets flood is
-  the reliable output; single depths over about 1 m are usually DEM error.
-- **Drain survey sizes.** Some surveyed drains look far too small for their
-  catchment. For example, Amman Koil Street RHS shows 207 % of capacity at 0.3 mm/h.
+- **Flood depths and timings against a real event.** No model run has yet been
+  compared with streets recorded under water in a real flood (GCC waterlogging
+  reports, Cyclone Michaung in December 2023, December 2015). Until that is done the
+  order in which streets flood is the trustworthy output, not the exact centimetres.
+- **Drain sizes that look wrong in the survey.** Amman Koil Street RHS, for one,
+  reaches 207 % of capacity at 0.3 mm/h, which its surveyed section cannot be right for.
+- **Ward boundaries.** The site places a street in a ward by the nearest surveyed
+  drain, within 400 m. GCC ward boundary polygons would replace that guess.
