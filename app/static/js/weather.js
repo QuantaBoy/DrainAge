@@ -314,7 +314,7 @@ function buildTimeline(body) {
     const readout = document.createElement("div");
     readout.className = "readout";
 
-    const showStep = () => {
+    const showStep = (publish = true) => {
         const index = Number(slider.value);
         const step = steps[index];
 
@@ -331,14 +331,13 @@ function buildTimeline(body) {
         ].filter(Boolean).join(" · ");
 
         readout.replaceChildren(when, rain, extra);
-        // The drain network reads the hour on show, so moving the slider moves the
-        // whole network with it.
-        window.rainNowMmH = step.rain;
-        window.dispatchEvent(new CustomEvent("rain-change", { detail: { mmPerHour: step.rain } }));
+        // Moving the slider moves the drain network with it. Drawing the panel does
+        // not: the network stays on the live nowcast until someone picks an hour.
+        if (publish) publishRain(step.rain, `Forecast panel, ${step.detail} (hourly)`, "forecast");
         [...ticks.children].forEach((tick, i) => tick.classList.toggle("on", i === index));
     };
 
-    const select = (key) => {
+    const select = (key, publish = true) => {
         steps = views[key].steps;
         for (const [name, button] of Object.entries(buttons)) {
             button.setAttribute("aria-pressed", String(name === key));
@@ -351,11 +350,11 @@ function buildTimeline(body) {
             tick.textContent = step.label;
             return tick;
         }));
-        showStep();
+        showStep(publish);
     };
 
-    slider.addEventListener("input", showStep);
-    select("now");
+    slider.addEventListener("input", () => showStep());
+    select("now", false);
 
     const timeline = document.createElement("div");
     timeline.className = "timeline";

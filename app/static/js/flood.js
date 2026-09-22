@@ -14,6 +14,13 @@ const DEPTH_BANDS = [
     { min: 0, color: "#f9a825", label: "Under 5 cm — wet" },
 ];
 
+// Rainfall choices for both flood panels: the live feed, or a rate held for 3 hours.
+const SCENARIO_RATES = [
+    ["", "Live forecast (Open-Meteo)"],
+    ...[15, 30, 60, 100].map((rate) =>
+        [String(rate), `Scenario: ${rate} mm/h for 3 h (${rate * 3} mm total)`]),
+];
+
 function depthColor(cm) {
     return (DEPTH_BANDS.find((band) => cm >= band.min) || DEPTH_BANDS.at(-1)).color;
 }
@@ -95,16 +102,11 @@ const floodUi = (() => {
 
     // The live nowcast is the real answer; the fixed rates are for asking what a
     // storm of a given intensity would do to this network, which is the question a
-    // planner asks on a dry afternoon.
+    // planner asks on a dry afternoon. Labelled by rate and total only: no historical
+    // event or warning level the model has not been checked against.
     const scenarioLabel = el("label", "drain-label", "Rainfall");
     const scenario = document.createElement("select");
-    for (const [value, label] of [
-        ["", "Live nowcast"],
-        ["15", "What if: 15 mm/h (heavy)"],
-        ["30", "What if: 30 mm/h (very heavy)"],
-        ["60", "What if: 60 mm/h (red alert)"],
-        ["100", "What if: 100 mm/h (2015 flood)"],
-    ]) scenario.append(opt(value, label));
+    for (const [value, label] of SCENARIO_RATES) scenario.append(opt(value, label));
     scenarioLabel.append(scenario);
 
     const slider = document.createElement("input");
@@ -317,7 +319,7 @@ async function loadFlood() {
     floodState.step = 0;
     // One rainfall for the whole dashboard: a what-if storm drives the drain layer
     // and its load colouring too, so the two panels never disagree about the weather.
-    publishRain(data.nowcast.rain_mm_h[0]);
+    publishFloodRain();
     floodUi.slider.max = String(Math.max(0, data.nowcast.rain_mm_h.length - 1));
     floodUi.slider.value = "0";
     floodUi.note.textContent = `${data.nowcast.source} · ${data.drains_considered.toLocaleString()} drains`;
@@ -331,14 +333,23 @@ floodUi.scenario.addEventListener("change", () => {
 floodUi.slider.addEventListener("input", () => {
     floodState.step = Number(floodUi.slider.value);
     drawFlood();
-    publishRain(floodState.data?.nowcast.rain_mm_h[floodState.step]);
+    publishFloodRain();
 });
 
-// Hand the rate on show to whatever else draws itself from the rainfall.
-function publishRain(mmPerHour) {
-    if (typeof mmPerHour !== "number") return;
-    window.rainNowMmH = mmPerHour;
-    window.dispatchEvent(new CustomEvent("rain-change", { detail: { mmPerHour } }));
+// Hand the rate on show to whatever else draws itself from the rainfall (publishRain
+// is in layers.js), saying which step of which run it is.
+function publishFloodRain() {
+    const data = floodState.data;
+    if (!data) return;
+    const step = floodState.step;
+    const minutes = step * FLOOD_STEP_MINUTES;
+    const when = minutes === 0 ? "now" : `+${minutes} min`;
+    if (data.nowcast.mode === "scenario") {
+        publishRain(data.nowcast.rain_mm_h[step], `Flood nowcast scenario, ${when} (hypothetical)`, "scenario");
+    } else {
+        publishRain(data.nowcast.rain_mm_h[step], `Flood nowcast, ${when} (Open-Meteo 15-min)`,
+            step === 0 ? "live" : "forecast");
+    }
 }
 
 // Re-run when the filters that scope the drains change.
@@ -360,4 +371,6 @@ map.on("overlayremove", (event) => {
     document.getElementById("flood-panel")?.setAttribute("hidden", "");
     floodState.request++;
     floodLayer.clearLayers();
+    // The drains were running on this panel's rain; with it gone, back to live.
+    if (window.rainSource.label.startsWith("Flood nowcast")) backToLiveRain();
 });

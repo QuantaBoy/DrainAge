@@ -53,6 +53,10 @@ def _overpass_to_geojson(data: dict[str, Any]) -> dict[str, Any]:
                 "id": element["id"],
                 "name": element.get("tags", {}).get("name"),
                 "highway": element.get("tags", {}).get("highway"),
+                # A bridge deck sits metres above the DEM cell under it, which is the
+                # river; the flood models skip bridges rather than drown them.
+                "bridge": element.get("tags", {}).get("bridge", "no") != "no",
+                "tunnel": element.get("tags", {}).get("tunnel", "no") != "no",
             },
         }
         for element in data["elements"]
@@ -64,16 +68,24 @@ def _overpass_to_geojson(data: dict[str, Any]) -> dict[str, Any]:
     return {"type": "FeatureCollection", "features": features}
 
 
-@router.get("/streets", summary="Chennai road network as GeoJSON")
-async def get_streets() -> dict[str, Any]:
-    if CACHE_PATH.exists():
-        return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+WATERWAYS_PATH = CACHE_PATH.parent / "chennai_waterways.geojson"
+# Rivers, canals and nullahs, a little past the box so a channel leaving it still drains.
+# The rain model burns them into the DEM, where 30 m cells otherwise read every road
+# embankment across a canal as a dam.
+WATERWAYS_QUERY = f"""
+[out:json][timeout:120];
+way["waterway"~"^(river|canal|stream|drain)$"]({CHENNAI_BBOX[0] - 0.02},{CHENNAI_BBOX[1] - 0.02},{CHENNAI_BBOX[2] + 0.02},{CHENNAI_BBOX[3] + 0.02});
+(._;>;);
+out body;
+"""
 
+
+async def _overpass(query: str) -> dict[str, Any]:
     # Overpass rejects requests with no identifying User-Agent (HTTP 406).
     headers = {"User-Agent": "SIH26085-flood-dashboard/1.0"}
     try:
-        async with httpx.AsyncClient(timeout=90.0, headers=headers) as client:
-            response = await client.post(OVERPASS_URL, data={"data": OVERPASS_QUERY})
+        async with httpx.AsyncClient(timeout=150.0, headers=headers) as client:
+            response = await client.post(OVERPASS_URL, data={"data": query})
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -84,8 +96,40 @@ async def get_streets() -> dict[str, Any]:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Overpass API returned HTTP {response.status_code}.",
         )
+    return response.json()
 
-    geojson = _overpass_to_geojson(response.json())
+
+@router.get("/waterways", summary="Chennai rivers, canals and drains as GeoJSON")
+async def get_waterways() -> dict[str, Any]:
+    if WATERWAYS_PATH.exists():
+        return json.loads(WATERWAYS_PATH.read_text(encoding="utf-8"))
+    data = await _overpass(WATERWAYS_QUERY)
+    nodes = {e["id"]: (e["lon"], e["lat"]) for e in data["elements"] if e["type"] == "node"}
+    features = []
+    for element in data["elements"]:
+        if element["type"] != "way":
+            continue
+        coords = [nodes[n] for n in element["nodes"] if n in nodes]
+        if len(coords) < 2:
+            continue
+        tags = element.get("tags", {})
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {"id": element["id"], "name": tags.get("name"),
+                           "waterway": tags.get("waterway"), "tunnel": tags.get("tunnel")},
+        })
+    geojson = {"type": "FeatureCollection", "features": features}
+    WATERWAYS_PATH.write_text(json.dumps(geojson), encoding="utf-8")
+    return geojson
+
+
+@router.get("/streets", summary="Chennai road network as GeoJSON")
+async def get_streets() -> dict[str, Any]:
+    if CACHE_PATH.exists():
+        return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+
+    geojson = _overpass_to_geojson(await _overpass(OVERPASS_QUERY))
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     CACHE_PATH.write_text(json.dumps(geojson), encoding="utf-8")
     return geojson
