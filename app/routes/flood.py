@@ -28,7 +28,7 @@ from fastapi.responses import Response
 from app.routes.drains import _catchment, _load_csv, _matches
 from app.routes.streets import CHENNAI_BBOX
 from app.routes.weather import local_current_step
-from app.services import hydraulics, rain_ponding, street_flood, terrain
+from app.services import channels, hydraulics, rain_ponding, street_flood, terrain
 
 router = APIRouter(prefix="/data-collection", tags=["Flood"])
 
@@ -347,6 +347,45 @@ def _place_index() -> dict[str, Any]:
     return _places
 
 
+def _label_basins(stretches: list[dict[str, Any]]) -> None:
+    """The river basin and named channel each stretch's water belongs to.
+
+    Chennai's drainage is reported by basin - Kosasthalayar, Cooum, Adyar, Kovalam -
+    and the basin model names every channel, so a flooded street can be placed in the
+    system that is supposed to carry its water away.
+    """
+    if not stretches:
+        return
+    found = channels.nearest_many([tuple(f["properties"]["deepest"]) for f in stretches])
+    for feature, near in zip(stretches, found):
+        feature["properties"]["basin"] = near["subbasin"] if near else None
+        feature["properties"]["channel"] = near["name"] if near else None
+        feature["properties"]["channel_m"] = near["metres_away"] if near else None
+
+
+def _basin_table(stretches: list[dict[str, Any]], impassable_cm: float) -> list[dict[str, Any]]:
+    """One row per river basin: how much of it goes under, and how deep."""
+    rows: dict[str, dict[str, Any]] = {}
+    for feature in stretches:
+        p = feature["properties"]
+        name = p.get("basin") or "outside the mapped basins"
+        row = rows.setdefault(name, {"basin": name, "stretches": 0, "wet_m": 0.0,
+                                     "max_depth_cm": 0.0, "impassable": 0, "streets": set()})
+        row["stretches"] += 1
+        row["wet_m"] += p["wet_m"]
+        row["max_depth_cm"] = max(row["max_depth_cm"], p["max_depth_cm"])
+        row["impassable"] += p["max_depth_cm"] >= impassable_cm
+        if p["name"]:
+            row["streets"].add((p["name"], p.get("ward")))
+    table = []
+    for row in rows.values():
+        row["named_streets"] = len(row.pop("streets"))
+        row["wet_km"] = round(row.pop("wet_m") / 1000, 2)
+        table.append(row)
+    table.sort(key=lambda r: r["wet_km"], reverse=True)
+    return table
+
+
 def _label_places(stretches: list[dict[str, Any]]) -> None:
     """Ward, zone and locality on every stretch, from the drain nearest its deepest point."""
     if not stretches:
@@ -471,6 +510,7 @@ async def get_rain_ponding_streets(
         stretches, water = rain_ponding.flooded_streets(
             model, levels, rain["step_minutes"], min_depth_cm / 100, IMPASSABLE_DEPTH_M)
         _label_places(stretches)
+        _label_basins(stretches)
         if zone or ward:
             stretches = [f for f in stretches
                          if (not zone or f["properties"]["zone"] == zone)
@@ -492,6 +532,9 @@ async def get_rain_ponding_streets(
         "type": "FeatureCollection",
         "features": stretches,
         "streets": table,
+        # Chennai's drainage is organised by river basin; this says which of them the
+        # flooding is in, from the basin model's own channel layer.
+        "basins": _basin_table(stretches, impassable),
         # Water level in every hollow a stretch touches, one per step: depth at a
         # vertex at step i is water[hollow][i] - ground_m.
         "water_level_m": water,
