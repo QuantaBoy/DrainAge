@@ -208,16 +208,22 @@ def snap_nodes(polylines: list[list[list[float]]],
     return ids, nodes
 
 
-def accumulate(edges: list[dict[str, Any]]) -> list[float]:
-    """Catchment area reaching each drain, its own plus everything upstream.
+def _upstream_nodes(edge: dict[str, Any]) -> list[int]:
+    """The junctions a drain can carry water away from: all of its own but its outlet."""
+    outlet = edge["nodes"][-1]
+    return list(dict.fromkeys(n for n in edge["nodes"] if n != outlet))
+
+
+def network(edges: list[dict[str, Any]]) -> dict[str, Any]:
+    """The drain network as a directed graph: who carries water on from each junction.
 
     `edges` carry `nodes` (junction ids along the drain, already ordered the way the
-    water runs), `local` (its own catchment, m²), `head` and `tail` (the invert levels
-    at those two ends, or None).
+    water runs), `head` and `tail` (the invert levels at those two ends, or None).
 
-    Runoff delivered to a junction leaves it down exactly one drain: the one with the
-    lowest outlet, which is where water actually goes. Drains are then settled in
-    topological order, so everything upstream of a drain is finished before it is.
+    Nodes are manholes and junctions, edges are drains. Water delivered to a junction
+    leaves it down exactly one drain, its carrier: the one with the lowest outlet,
+    which is where water actually goes. Drains come back in topological order, so
+    everything upstream of a drain is settled before it is.
 
     ponytail: cycles in the surveyed inverts are broken by falling back to invert
     order for the drains inside them; a full hydraulic solver is the upgrade if the
@@ -227,7 +233,11 @@ def accumulate(edges: list[dict[str, Any]]) -> list[float]:
     # away the flow arriving at its own outlet, so only its upstream vertices count.
     carrier: dict[int, int] = {}
     for i, edge in enumerate(edges):
-        for node in edge["nodes"][:-1]:
+        # Its own outlet excluded even where it repeats: snapping merges vertices
+        # closer than SNAP_M, so a drain's last two points can share its outlet's id,
+        # and without this 2,692 drains carried their own water away, dead-ending the
+        # network there.
+        for node in _upstream_nodes(edge):
             current = carrier.get(node)
             if current is None or _lower_outlet(edge, edges[current]):
                 carrier[node] = i
@@ -260,14 +270,78 @@ def accumulate(edges: list[dict[str, Any]]) -> list[float]:
             key=lambda i: edges[i]["head"] if edges[i]["head"] is not None else -math.inf,
             reverse=True,
         ))
+    return {"carrier": carrier, "downstream": downstream, "order": order}
 
+
+def accumulate(edges: list[dict[str, Any]], graph: dict[str, Any] | None = None) -> list[float]:
+    """Catchment area reaching each drain, its own (`local`, m²) plus everything upstream."""
+    graph = graph or network(edges)
     accumulated = [0.0] * len(edges)
-    for i in order:
+    for i in graph["order"]:
         accumulated[i] += edges[i]["local"]
-        j = downstream[i]
+        j = graph["downstream"][i]
         if j is not None:
             accumulated[j] += accumulated[i]
     return accumulated
+
+
+def route(edges: list[dict[str, Any]], graph: dict[str, Any], rain_mm_h: list[float],
+          coeff: float, step_seconds: float) -> dict[int, list[float]]:
+    """Rain through the network, step by step: the water standing at each junction.
+
+    Each step, the rain on a drain's own strip arrives at its head junction. Then, in
+    the graph's order, every drain takes in what is waiting at the junctions it
+    carries water on from, up to its capacity, and hands it to its outlet junction,
+    where the drain below takes it in turn. What a drain cannot take stays at those
+    junctions - backflow, standing on the street above the manhole - and goes back in
+    at a later step once the drain has room. Water reaching a junction nothing
+    carries on from has left the network: an outfall, into a canal or river.
+
+    So a junction floods because the drain below it is full, and water already on a
+    street upstream is no longer counted again by every drain downstream of it.
+
+    `edges` carry `nodes`, `local` (catchment, m²) and `capacity` (m³/s, None for a
+    drain the survey did not size, which passes water on rather than inventing a
+    flood). Returns the volume standing at each junction that ever surcharges, m³,
+    one value per step.
+
+    ponytail: water crosses the network within one step, with no travel time along
+    the pipes; a hydrodynamic solver (SWMM-style) would add it. At 15 minute steps
+    and drains a few hundred metres long the difference is minutes.
+    """
+    carrier = graph["carrier"]
+    # The junctions each drain takes water in at: those it is the carrier for.
+    entries = [[n for n in _upstream_nodes(edge) if carrier.get(n) == i]
+               for i, edge in enumerate(edges)]
+    standing: dict[int, float] = defaultdict(float)
+    history: dict[int, list[float]] = {}
+
+    for step, rain in enumerate(rain_mm_h):
+        arriving: dict[int, float] = defaultdict(float)
+        for edge in edges:
+            arriving[edge["nodes"][0]] += rational_inflow(edge["local"], rain, coeff) * step_seconds
+
+        for i in graph["order"]:
+            nodes = entries[i]
+            if not nodes:
+                continue
+            waiting = sum(standing[n] + arriving[n] for n in nodes)
+            if waiting <= 0:
+                continue
+            capacity = edges[i]["capacity"]
+            taken = waiting if capacity is None else min(waiting, capacity * step_seconds)
+            # What it cannot take backs up at each junction in proportion to what was
+            # waiting there.
+            left = (waiting - taken) / waiting
+            for n in nodes:
+                standing[n] = (standing[n] + arriving[n]) * left
+                arriving[n] = 0.0
+            arriving[edges[i]["nodes"][-1]] += taken
+
+        for n, volume in standing.items():
+            if volume > 1e-6:
+                history.setdefault(n, [0.0] * len(rain_mm_h))[step] = volume
+    return history
 
 
 def _lower_outlet(candidate: dict[str, Any], current: dict[str, Any]) -> bool:
@@ -423,6 +497,33 @@ if __name__ == "__main__":
     # Every node id indexes a real position, which is what the flood model pours at.
     assert len(points) == len({i for line in ids for i in line})
     assert points[ids[0][0]][0] == 80.2
+
+    # Routing: a big drain feeding a small one feeding an outfall, 1 hectare each.
+    # 36 mm/h on 1 ha at C = 1 is 0.1 m³/s, so the head drain delivers 0.1 and the
+    # small one, sized for 0.05, backs the rest up at the junction they share.
+    pipe = [
+        {"nodes": [1, 2], "local": 10_000.0, "capacity": 1.0, "head": 14.0, "tail": 13.0},
+        {"nodes": [2, 3], "local": 0.0, "capacity": 0.05, "head": 13.0, "tail": 12.0},
+        {"nodes": [3, 4], "local": 0.0, "capacity": 1.0, "head": 12.0, "tail": 11.0},
+    ]
+    graph = network(pipe)
+    assert graph["downstream"] == [1, 2, None] and graph["order"] == [0, 1, 2]
+    wet = route(pipe, graph, [36.0, 36.0, 0.0, 0.0, 0.0], 1.0, 600.0)
+    # Only the junction above the small drain floods: not the head, not the outfall.
+    assert set(wet) == {2}, wet
+    # 0.05 m³/s over 600 s is 30 m³ a step that cannot get in, for both wet steps.
+    assert abs(wet[2][0] - 30.0) < 1e-6 and abs(wet[2][1] - 60.0) < 1e-6, wet
+    # Once the rain stops the small drain takes 30 m³ a step back, so it drains away.
+    assert abs(wet[2][2] - 30.0) < 1e-6 and wet[2][3] == 0.0, wet
+    # A drain the survey never sized passes everything on rather than flooding.
+    unsized = [dict(pipe[0]), {**pipe[1], "capacity": None}, dict(pipe[2])]
+    assert route(unsized, network(unsized), [36.0], 1.0, 600.0) == {}
+    # Accumulation over the same graph still sees the whole catchment.
+    assert accumulate(pipe, graph) == [10_000.0, 10_000.0, 10_000.0]
+    # A drain whose last two points snapped to its outlet does not carry its own water
+    # away: the drain below still takes it.
+    stutter = [{**pipe[0], "nodes": [1, 2, 2]}, dict(pipe[1]), dict(pipe[2])]
+    assert network(stutter)["downstream"] == [1, 2, None]
 
     assert load_band(0.2) == "clear" and load_band(0.9) == "at capacity"
     assert load_band(1.4) == "overflowing"
