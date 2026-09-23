@@ -14,6 +14,7 @@ import asyncio
 import csv
 import json
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -208,11 +209,18 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
         drain["outlet"] = node_points[nodes[-1]]
         drain["start_node"] = nodes[0]
 
-    # A drain nothing else runs out of is where its network leaves: the rate water can
-    # actually be carried away at, rather than every drain in a chain counted again.
-    fed = {drain["start_node"] for drain in drains}
-    for drain in drains:
-        drain["is_outfall"] = drain["outlet_node"] not in fed
+    # Where the network lets go of its water: a drain is an outfall when nothing
+    # carries on from the node it ends at. A side drain usually joins a trunk part-way
+    # along it, not at the trunk's own start, so every node a drain passes through
+    # counts as carrying water on - checking start nodes alone called two drains in
+    # three an outfall and doubled the city's drainage.
+    carries_on: dict[int, set[int]] = defaultdict(set)
+    for index, nodes in enumerate(node_ids):
+        for node in nodes[:-1]:
+            carries_on[node].add(index)
+    for index, drain in enumerate(drains):
+        onward = carries_on[drain["outlet_node"]] - {index}
+        drain["is_outfall"] = not onward
 
 
 def flow_direction(invert_start: Any, invert_end: Any) -> str:
