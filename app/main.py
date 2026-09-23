@@ -19,7 +19,7 @@ ROOT_DIR = BASE_DIR.parent
 sys.path.insert(0, str(ROOT_DIR))
 load_dotenv(ROOT_DIR / ".env")
 
-from app.routes import drains, flood, resources, streets, weather  # noqa: E402
+from app.routes import drains, flood, navigation, resources, streets, weather  # noqa: E402
 
 app = FastAPI()
 # Flood and drain GeoJSON is numbers in repeated keys, which compresses about fivefold.
@@ -29,6 +29,7 @@ app.include_router(streets.router)
 app.include_router(drains.router)
 app.include_router(flood.router)
 app.include_router(resources.router)
+app.include_router(navigation.router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -39,10 +40,12 @@ async def warm_caches() -> None:
     # in the background, keeps it off the first flood request.
     import asyncio
 
-    from app.services import street_flood
+    from app.services import routing, street_flood
 
     # warm_ponding reads both of the others, so it runs after them in one job.
-    for job in (drains._load_csv, lambda: (street_flood._load(), flood.warm_ponding())):
+    # Routing costs roads by the rain model's water, so it warms after that model.
+    for job in (drains._load_csv,
+                lambda: (street_flood._load(), flood.warm_ponding(), routing.warm(flood._ponding_model()))):
         asyncio.get_running_loop().run_in_executor(None, job)
 
 
