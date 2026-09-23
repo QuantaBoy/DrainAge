@@ -31,7 +31,9 @@ Two disagreements, which the site reports rather than quietly fixing:
 ## Basin channel files — extend the drainage network
 
 `macro_drains.csv`, `micro_drains.csv`, `buckingham_canal.csv`,
-`krishna_water_canal.csv`, `rivers_streams.csv` — the basin model's channel layer:
+`krishna_water_canal.csv`, `rivers_streams.csv` — from
+[Chennai Basin Drainage Maps, OpenCity](https://data.opencity.in/dataset/chennai-basin-drainage-maps),
+the basin model's channel layer:
 934 rows, 1,030 lines once multi-part channels are split (27 macro drain, 39 micro
 drain, 946 supply / surplus channel and 18 river lines), each with an official name, its river
 subbasin (Kosasthalayar, Cooum, Adyar, Kovalam, Nandhiyar, Nagariyar) and whether the
