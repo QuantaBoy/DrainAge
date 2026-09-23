@@ -104,6 +104,8 @@ function showPlace(lat, lon, label) {
 }
 
 map.on("click", (event) => {
+    // While the route form is picking a start or destination, the click is its.
+    if (window.routePicking) return;
     stopWatching();
     const { lat, lng } = event.latlng;
     clearMarker();

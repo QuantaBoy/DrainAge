@@ -133,6 +133,7 @@ body {
         "map    drains"
         "map    flood"
         "map    ponding"
+        "map    route"
         "streets streets"
         "data   data";
     align-content: start;
@@ -150,6 +151,7 @@ body {
 #drain-panel { grid-area: drains; align-self: start; }
 #flood-panel { grid-area: flood; align-self: start; }
 #ponding-panel { grid-area: ponding; align-self: start; }
+#route-panel { grid-area: route; align-self: start; }
 #street-depths { grid-area: streets; }
 [hidden] { display: none !important; }
 #rain-data { grid-area: data; }
@@ -903,10 +905,44 @@ button { font: inherit; cursor: pointer; }
     .app {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "flood" "ponding"
+            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "route" "flood" "ponding"
             "streets" "data";
     }
     .topbar { border-radius: var(--radius); }
     /* On one column the map gets the screen, not a letterbox. */
     #map { height: 70vh; min-height: 24rem; }
 }
+
+/* Flood-safe route: the From/To form, and the result cards under it. */
+.route-field { display: flex; flex-direction: column; gap: .2rem; }
+.route-row { display: flex; gap: .35rem; margin-top: .2rem; }
+.route-row input {
+    flex: 1; min-width: 0; padding: .45rem .55rem; font: inherit; font-size: .82rem;
+    text-transform: none; letter-spacing: 0; font-weight: 500;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+}
+.route-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+.route-pick { padding: .4rem .6rem; font-size: .75rem; white-space: nowrap; }
+.route-found { font-size: .72rem; color: #1b6b36; min-height: .9rem; }
+.route-choices { display: flex; flex-wrap: wrap; gap: .25rem; }
+.route-choice {
+    padding: .15rem .5rem; font: inherit; font-size: .68rem; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted);
+}
+.route-choice:hover { border-color: var(--accent); color: var(--accent-ink); }
+.route-here { align-self: flex-start; font-size: .72rem; padding: .3rem .7rem; }
+.route-actions { display: flex; gap: .4rem; margin-top: .65rem; }
+.route-go {
+    flex: 1; padding: .55rem .9rem; border: 0; border-radius: 999px;
+    background: var(--accent); color: #fff; font-weight: 800; font-size: .85rem;
+}
+.route-go:hover { filter: brightness(1.08); }
+.route-result { margin-top: .65rem; display: flex; flex-direction: column; gap: .45rem; }
+.route-card { padding: .5rem .6rem; border-radius: 10px; font-size: .78rem; line-height: 1.45; background: var(--bg); }
+.route-card.safe { border-left: 4px solid #1565c0; }
+.route-card.plain { border-left: 4px dashed #6b7488; }
+.route-card.search { border-left: 4px solid var(--line); color: var(--muted); }
+.route-via { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
+.route-error { padding: .5rem .6rem; border-radius: 10px; background: #fde4e1; color: #a02a20; font-size: .78rem; font-weight: 600; }
+.route-picking { cursor: crosshair; }
+.route-picking .leaflet-interactive { cursor: crosshair; }

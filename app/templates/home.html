@@ -55,6 +55,7 @@
     <aside id="drain-panel" aria-label="Storm water drain filters"></aside>
     <aside id="flood-panel" aria-label="Flood nowcast" hidden></aside>
     <aside id="ponding-panel" aria-label="Rain on streets" hidden></aside>
+    <aside id="route-panel" aria-label="Flood-safe route"></aside>
     <section id="street-depths" aria-label="Street-level depth table" hidden></section>
 
     <section id="rain-data" hidden></section>
@@ -71,4 +72,5 @@
     <script src="{{ url_for('static', path='js/drains.js') }}"></script>
     <script src="{{ url_for('static', path='js/flood.js') }}"></script>
     <script src="{{ url_for('static', path='js/ponding.js') }}"></script>
+    <script src="{{ url_for('static', path='js/route.js') }}"></script>
 {% endblock %}
