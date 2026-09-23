@@ -14,7 +14,6 @@ import asyncio
 import csv
 import json
 import re
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -201,26 +200,34 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
             "tail": tail if _valid_invert(tail) else None,
         })
 
-    for drain, nodes, catchment in zip(drains, node_ids, hydraulics.accumulate(edges)):
+    graph = hydraulics.network(edges)
+    for drain, nodes, catchment in zip(drains, node_ids, hydraulics.accumulate(edges, graph)):
         drain["catchment_m2"] = catchment
-        # Where this drain hands its water on, and so where it comes back up when it
-        # cannot take any more.
+        # Where this drain hands its water on.
         drain["outlet_node"] = nodes[-1]
         drain["outlet"] = node_points[nodes[-1]]
         drain["start_node"] = nodes[0]
+    # Where the network lets go of its water: nothing carries on from the junction a
+    # drain ends at. A side drain usually joins a trunk part-way along it, which the
+    # graph's carriers already account for.
+    for drain, below in zip(drains, graph["downstream"]):
+        drain["is_outfall"] = below is None
 
-    # Where the network lets go of its water: a drain is an outfall when nothing
-    # carries on from the node it ends at. A side drain usually joins a trunk part-way
-    # along it, not at the trunk's own start, so every node a drain passes through
-    # counts as carrying water on - checking start nodes alone called two drains in
-    # three an outfall and doubled the city's drainage.
-    carries_on: dict[int, set[int]] = defaultdict(set)
-    for index, nodes in enumerate(node_ids):
-        for node in nodes[:-1]:
-            carries_on[node].add(index)
-    for index, drain in enumerate(drains):
-        onward = carries_on[drain["outlet_node"]] - {index}
-        drain["is_outfall"] = not onward
+    # Kept for routing rain through the network step by step (flood.py): the same
+    # graph, so the flood nowcast and the catchments can never disagree about it.
+    _graph.clear()
+    _graph.update({"edges": edges, "graph": graph, "points": node_points})
+
+
+# The drain network as a graph: edges (one per drain, in the survey's order), the
+# carrier of every junction and the topological order, and where each junction is.
+_graph: dict[str, Any] = {}
+
+
+def drain_graph() -> dict[str, Any]:
+    """The network the drains are loaded into, built on first use."""
+    _load_csv()
+    return _graph
 
 
 def flow_direction(invert_start: Any, invert_end: Any) -> str:

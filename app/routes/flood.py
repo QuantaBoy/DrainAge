@@ -3,9 +3,11 @@
 The chain this route closes, in one place:
 
   rainfall nowcast (15 minute steps, 0-3 h ahead)
-      -> runoff onto each drain's accumulated catchment
-      -> what the drain can carry, from its surveyed section (app/services/hydraulics.py)
-      -> what it cannot carry surcharges at its outlet manhole
+      -> runoff onto each drain's own strip, arriving at its head junction
+      -> routed through the drain network as a directed graph: junctions (manholes)
+         are nodes, drains are edges, each carrying up to its surveyed capacity
+         (app/services/hydraulics.py)
+      -> what a drain cannot take backs up at the junction it enters at
       -> that volume is poured onto the ground there (app/terrain.py)
       -> a depth in centimetres, at a place, at a time.
 
@@ -25,7 +27,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from app.routes.drains import _catchment, _load_csv, _matches
+from app.routes.drains import _load_csv, _matches, drain_graph
 from app.routes.streets import CHENNAI_BBOX
 from app.routes.weather import local_current_step
 from app.services import channels, hydraulics, rain_ponding, street_flood, terrain
@@ -93,68 +95,55 @@ async def rainfall_nowcast(lat: float, lon: float) -> dict[str, Any]:
     }
 
 
-def _basin_for(drain: dict[str, Any]) -> dict[str, Any] | None:
-    """The ground around this drain's outlet manhole, read once and kept."""
-    node = drain["outlet_node"]
+def _basin_for(node: int, point: list[float]) -> dict[str, Any] | None:
+    """The ground around one junction, read once and kept."""
     if node not in _basins:
-        lon, lat = drain["outlet"]
+        lon, lat = point
         _basins[node] = terrain.basin(lat, lon)
     return _basins[node]
 
 
-def simulate(drains: list[dict[str, Any]], rain_series: list[float], strip_m: float,
-             runoff_coeff: float, step_seconds: float) -> dict[int, dict[str, Any]]:
-    """Run the rainfall series through the network and pond what it cannot take.
+def simulate(rain_series: list[float], strip_m: float, runoff_coeff: float,
+             step_seconds: float) -> dict[int, dict[str, Any]]:
+    """Route the rain through the drain network and report the junctions that surcharge.
 
-    Returns one entry per manhole that floods, carrying the volume standing there at
-    each step. Volume builds while the drain below is over capacity and drains away
-    at its spare capacity once the rain eases, so the peak lands after the rain does,
-    which is how urban flooding actually behaves.
+    The whole network is routed, whatever the page is filtered to: rain on one ward
+    runs into the next, so a ward's flooding depends on drains outside it. Each entry
+    is one junction (a manhole) with the volume standing there at every step, the
+    drain it is trying to get into, and the drains that meet there.
     """
+    drains = _load_csv()
+    network = drain_graph()
+    scale = strip_m / hydraulics.STRIP_WIDTH_M
+    edges = [{
+        "nodes": edge["nodes"],
+        "local": edge["local"] * scale,
+        # Unsized drains pass water on rather than inventing a flood.
+        "capacity": drain["capacity"]["effective_capacity_m3s"]
+        if drain["capacity"]["effective_capacity_m3s"] > 0 else None,
+    } for edge, drain in zip(network["edges"], drains)]
+    standing = hydraulics.route(edges, network["graph"], rain_series, runoff_coeff, step_seconds)
+
+    # The drains that end at each junction: the water they deliver is what backs up.
+    arriving: dict[int, list[int]] = {}
+    for i, edge in enumerate(network["edges"]):
+        arriving.setdefault(edge["nodes"][-1], []).append(i)
+
+    carrier = network["graph"]["carrier"]
     ponded: dict[int, dict[str, Any]] = {}
-
-    for drain in drains:
-        capacity = drain["capacity"]["effective_capacity_m3s"]
-        if capacity <= 0:
-            continue
-        catchment = _catchment(drain, strip_m)
-        if catchment <= 0:
-            continue
-
-        standing = 0.0
-        series: list[float] | None = None
-        for step, rain in enumerate(rain_series):
-            inflow = hydraulics.rational_inflow(catchment, rain, runoff_coeff)
-            # Over capacity the excess comes up at the manhole; under it, the drain
-            # takes back what is standing there, as fast as it has room for.
-            standing = max(0.0, standing + (inflow - capacity) * step_seconds)
-            if standing <= 0 and series is None:
-                continue
-            if series is None:
-                series = [0.0] * len(rain_series)
-            series[step] = standing
-
-        if series is None:
-            continue
-
-        node = drain["outlet_node"]
-        entry = ponded.get(node)
-        if entry is None:
-            entry = {"drain": drain, "volume": [0.0] * len(rain_series),
-                     "drains": 0, "street_m": 0.0}
-            ponded[node] = entry
-        # The road the water comes up in is as long as the drains that surcharge into
-        # it: that is the channel it fills before it goes over the kerb.
-        entry["street_m"] += drain["length_m"]
-        # Several drains can surcharge at the same manhole; the street takes all of it.
-        for step, volume in enumerate(series):
-            entry["volume"][step] += volume
-        entry["drains"] += 1
-        # The report names the worst-hit drain at that manhole.
-        if series[-1] >= max(entry["drain"].get("_peak", 0.0), 0.0):
-            entry["drain"] = drain
-            entry["_peak"] = series[-1]
-
+    for node, volume in standing.items():
+        full = carrier[node]
+        meeting = [full, *arriving.get(node, [])]
+        ponded[node] = {
+            "point": network["points"][node],
+            # The drain the water cannot get into: the one the report names.
+            "drain": drains[full],
+            "volume": volume,
+            "drains": len(meeting),
+            # Water backing up at a junction stands along the roads its drains run
+            # under before it goes over the kerb.
+            "street_m": sum(drains[i]["length_m"] for i in meeting),
+        }
     return ponded
 
 
@@ -586,14 +575,18 @@ async def get_flood_nowcast(
 
     step_seconds = STEP_MINUTES * 60
     ponded = await asyncio.to_thread(
-        simulate, selected, nowcast["rain_mm_h"], strip_m, runoff_coeff, step_seconds)
+        simulate, nowcast["rain_mm_h"], strip_m, runoff_coeff, step_seconds)
 
     features = []
     wet_points = []
     worst_depth = 0.0
     for node, entry in ponded.items():
         drain = entry["drain"]
-        basin = _basin_for(drain)
+        # Routed over the whole city; reported for the zone or ward asked about.
+        if not _matches(drain["props"], {"ZONE": zone, "WARD": ward}):
+            continue
+        point = entry["point"]
+        basin = _basin_for(node, point)
 
         corridor = entry["street_m"] * terrain.ROAD_WIDTH_M
         depths, over_kerb = [], False
@@ -609,10 +602,10 @@ async def get_flood_nowcast(
         first = next((i for i, d in enumerate(depths) if d >= REPORT_DEPTH_M), None)
         props = drain["props"]
         wet = {
-            "node": node, "lon": drain["outlet"][0], "lat": drain["outlet"][1],
+            "node": node, "lon": point[0], "lat": point[1],
             # Road level, not the DEM cell: a manhole cell with a roof in it would put
             # the water level metres too high and flood every street around it.
-            "ground_m": terrain.ground_level(drain["outlet"][1], drain["outlet"][0]),
+            "ground_m": terrain.ground_level(point[1], point[0]),
             # Shallower than reportable counts as dry, so a street is never drawn wet
             # at a step its manhole is not.
             "depth_m": [d if d >= REPORT_DEPTH_M else 0.0 for d in depths],
@@ -622,7 +615,7 @@ async def get_flood_nowcast(
         reaches, levels = street_flood.water_profile(wet)
         features.append({
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": drain["outlet"]},
+            "geometry": {"type": "Point", "coordinates": point},
             "properties": {
                 "node": node,
                 "street": props.get("ST_NAME"),
