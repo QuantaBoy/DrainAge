@@ -33,7 +33,7 @@ from scipy import ndimage
 from skimage.morphology import reconstruction
 from skimage.segmentation import watershed
 
-from app.services import terrain
+from app.services import channels, terrain
 
 # A hollow shallower than this at its deepest is DEM noise, not somewhere water stands.
 MIN_HOLLOW_M = terrain.MIN_DEPTH_M
@@ -52,6 +52,9 @@ SMOOTH_CELLS = 3
 # it drain the way the real one does. Waterways come from /data-collection/waterways.
 BURN_M = 2.0
 WATERWAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_waterways.geojson"
+# Two channel layers, because neither is complete: OpenStreetMap's waterways, and the
+# basin model's own macro and micro drains, canals and surplus channels
+# (app/services/channels.py), 78 km of which inside the city are on no other layer.
 
 # How fast runoff crosses a catchment to its hollow, m/s: sheet flow and gutters on
 # flat paved ground. A catchment of side L takes L / speed to deliver its rain, so a
@@ -242,10 +245,22 @@ def load(south: float, north: float, west: float, east: float) -> dict[str, Any]
     return _model
 
 
+def _channel_lines() -> list[list[list[float]]]:
+    """Every channel to burn in: OpenStreetMap's waterways and the basin model's own."""
+    from app.services import channels
+
+    lines: list[list[list[float]]] = []
+    if WATERWAYS_PATH.exists():
+        for feature in json.loads(WATERWAYS_PATH.read_text(encoding="utf-8"))["features"]:
+            lines.append(feature["geometry"]["coordinates"])
+    lines.extend(channels.lines())
+    return lines
+
+
 def _burn_waterways(ground: np.ndarray, north: float, west: float,
                     lat_step: float, lon_step: float) -> int:
-    """Lower the cells under every mapped waterway by BURN_M, in place; how many."""
-    if BURN_M <= 0 or not WATERWAYS_PATH.exists():
+    """Lower the cells under every mapped channel by BURN_M, in place; how many."""
+    if BURN_M <= 0:
         return 0
     from app.services.street_flood import densify
 
@@ -253,8 +268,8 @@ def _burn_waterways(ground: np.ndarray, north: float, west: float,
     spacing = lat_step * terrain.M_PER_DEG / 2
     rows_n, cols_n = ground.shape
     hit = np.zeros(ground.shape, dtype=bool)
-    for feature in json.loads(WATERWAYS_PATH.read_text(encoding="utf-8"))["features"]:
-        xy = np.asarray(densify(feature["geometry"]["coordinates"], spacing))
+    for line in _channel_lines():
+        xy = np.asarray(densify(line, spacing))
         rows = np.floor((north - xy[:, 1]) / lat_step).astype(int)
         cols = np.floor((xy[:, 0] - west) / lon_step).astype(int)
         inside = (rows >= 0) & (rows < rows_n) & (cols >= 0) & (cols < cols_n)
@@ -317,6 +332,9 @@ def at(model: dict[str, Any], lat: float, lon: float, levels: np.ndarray, step_m
         "hollow": _hollow(model, here, levels) if here else None,
         "drains_to": None if here or into in (0, model["sea"]) else _hollow(model, into, levels),
         "drains_to_sea_or_edge": into == model["sea"],
+        # The named channel and river basin this place belongs to, so the answer reads
+        # "Cooum basin, by the Otteri Nullah" and not just as a dip in the terrain.
+        "channel": channels.nearest(lat, lon),
     }
 
 

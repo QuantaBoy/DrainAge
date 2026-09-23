@@ -1,6 +1,6 @@
 # Cross-Checked Data
 
-The two datasets we cross-checked our sources against, kept here as they were supplied.
+The datasets we cross-checked our sources against, kept here as they were supplied.
 
 ## `dem_points (1).csv` — checks the elevation
 
@@ -27,6 +27,41 @@ Two disagreements, which the site reports rather than quietly fixing:
 
 - **Ward 33** — the sheet says Zone III (Madhavaram), the survey says N04, over 35 drains.
 - **Ward 35** — a sheet exists, but the survey has no drains for it.
+
+## Basin channel files — extend the drainage network
+
+`macro_drains.csv`, `micro_drains.csv`, `buckingham_canal.csv`,
+`krishna_water_canal.csv`, `rivers_streams.csv` — the basin model's channel layer:
+934 rows, 1,030 lines once multi-part channels are split (27 macro drain, 39 micro
+drain, 946 supply / surplus channel and 18 river lines), each with an official name, its river
+subbasin (Kosasthalayar, Cooum, Adyar, Kovalam, Nandhiyar, Nagariyar) and whether the
+official model routes it hydraulically.
+
+We cross-checked them against the two drainage layers the site already had: the
+**OpenStreetMap waterways** and the **GCC storm water drain survey**.
+
+| File | km inside Chennai | Already on OSM | Already in GCC survey | **New** |
+|---|---|---|---|---|
+| macro_drains | 39.3 | 29.1 | 0.1 | **10.1** |
+| micro_drains | 78.8 | 66.9 | 4.1 | **7.8** |
+| buckingham_canal | 48.2 | 47.7 | 0.0 | **0.5** |
+| krishna_water_canal | 0.0 | — | — | — |
+| rivers_streams | 215.7 | 152.5 | 3.5 | **59.6** |
+
+**Result:** 78 km of channel inside the city was on neither layer — Okkium Madavu,
+Meenambakkam and airport drains, the Ambattur Surplus – Otteri Nullah link, Adyar
+Creek. The drainage network is extended with them: they are burned into the DEM with
+the OSM waterways, so the terrain no longer dams them.
+
+Also checked:
+
+- **Stated length vs drawn geometry** agree to 0.3 % (median): the geometry is sound.
+- **Our DEM catchments vs the official basins:** 96.0 % of sampled catchment cells lie
+  in the same official basin as the hollow they drain to. Most of the rest sit on the
+  Adyar / Kovalam divide, where the files themselves list channels as shared.
+
+The files carry no cross-sections, so they place and name the network but cannot size
+it. Every flooded street is now reported with its river basin and nearest named channel.
 
 ---
 
