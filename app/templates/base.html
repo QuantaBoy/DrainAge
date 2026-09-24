@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0c0f15">
     <title>{% block title %}SIH26085{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
     {% block head %}{% endblock %}
-    <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}?v={{ asset_v }}">
     <!-- Before first paint, so a remembered palette or theme does not flash the default. -->
     <script>
         (() => {
@@ -21,7 +22,7 @@
         })();
     </script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% block defs %}{% endblock %}
 
 <div class="{% block shell %}app{% endblock %}">
@@ -29,7 +30,7 @@
     <header class="topbar">
         <a class="brand" href="/">
             <span class="brand-mark" aria-hidden="true">◆</span>
-            <span class="brand-name">SIH26085</span>
+            <span class="brand-name">{% block brand %}SIH26085{% endblock %}</span>
         </a>
 
         {% set path = request.url.path %}
@@ -60,6 +61,6 @@
 </div>
 
 {% block scripts %}{% endblock %}
-<script src="{{ url_for('static', path='js/theme.js') }}"></script>
+<script src="{{ url_for('static', path='js/theme.js') }}?v={{ asset_v }}"></script>
 </body>
 </html>

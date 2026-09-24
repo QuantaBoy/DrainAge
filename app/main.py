@@ -1,6 +1,7 @@
 """Application entry point: the dashboard page, its static assets and the API."""
 
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
@@ -32,6 +33,9 @@ app.include_router(resources.router)
 app.include_router(navigation.router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+# Stamped onto every script and stylesheet URL, so a browser never runs yesterday's
+# JavaScript against today's page after a restart.
+templates.env.globals["asset_v"] = str(int(time.time()))
 
 
 @app.on_event("startup")

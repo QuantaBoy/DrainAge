@@ -17,6 +17,7 @@ street by street.
 
 import json
 import math
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,7 @@ WATERWAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_wate
 
 _EIGHT = np.ones((3, 3), dtype=bool)
 _model: dict[str, Any] | None = None
+_load_lock = threading.Lock()
 
 
 def prepare(surface: np.ndarray, outlet: np.ndarray, cell_area_m2: float) -> dict[str, Any]:
@@ -69,11 +71,32 @@ def prepare(surface: np.ndarray, outlet: np.ndarray, cell_area_m2: float) -> dic
             "cell_area_m2": cell_area_m2}
 
 
+def model_inputs() -> list[Path]:
+    """Every file the conditioned terrain is built from, code included."""
+    from app.services import channels, diskcache, street_flood
+
+    dems = [Path(terrain.DATA_DIR.parent.parent / f) for f in terrain.source_info()["files"]]
+    channel_files = [channels.DATA_DIR / name for name in channels.FILES]
+    return [*dems, BUILDINGS_PATH, WATER_PATH, WARD_POINTS_PATH, WATERWAYS_PATH, *channel_files,
+            Path(__file__), *diskcache.sources(terrain, channels, street_flood)]
+
+
 def load(south: float, north: float, west: float, east: float) -> dict[str, Any] | None:
-    """The zones over a box, built once from whichever DEM terrain.py is reading."""
+    """The zones over a box, built once: from disk if nothing it depends on has changed."""
     global _model
     if _model is not None:
         return _model
+    from app.services import diskcache
+
+    with _load_lock:
+        if _model is None and terrain.grid(south, north, west, east) is not None:
+            _model = diskcache.cached(f"terrain-{south}-{north}-{west}-{east}", model_inputs(),
+                                      lambda: _build(south, north, west, east))
+    return _model
+
+
+def _build(south: float, north: float, west: float, east: float) -> dict[str, Any] | None:
+    """Condition the DEM and cut it into storage zones."""
     dem = terrain.grid(south, north, west, east)
     if dem is None:
         return None
@@ -129,8 +152,7 @@ def load(south: float, north: float, west: float, east: float) -> dict[str, Any]
                       "buildings": buildings is not None,
                       "water_bodies": water is not None,
                   }})
-    _model = model
-    return _model
+    return model
 
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"

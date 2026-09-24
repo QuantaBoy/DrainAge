@@ -16,6 +16,8 @@ const pondingRenderer = L.canvas({ padding: 0.5 });
 const pondingState = { request: 0, data: null, step: 0, filter: "", shown: 300, sort: "soonest", timer: null };
 
 const bandOf = (cm) => DEPTH_BANDS.findIndex((band) => cm >= band.min);
+// Manholes appear from this zoom in, street by street.
+const MANHOLE_ZOOM = 15;
 
 // ─── Time ──────────────────────────────────────────────────────────────────────
 
@@ -50,9 +52,10 @@ function depthsAt(props, step) {
 
 const pondingUi = (() => {
     const container = el("div", "flood-panel");
-    const header = el("div", "drain-header");
-    header.append(el("span", "drain-icon", "🌧️"), el("span", "drain-title", "Flood nowcast · streets + drains"));
-    const note = el("div", "flood-note", "Turn on the layer to run the forecast.");
+    const header = el("div", "panel-head");
+    header.append(el("h2", "", "What-if storm"),
+        el("p", "panel-lead", "Try a storm and a drain condition, and see which streets go under."));
+    const note = el("div", "flood-note", "");
 
     const rainLabel = el("label", "drain-label", "Rainfall");
     const rain = document.createElement("select");
@@ -77,39 +80,18 @@ const pondingUi = (() => {
 
     const controls = el("div", "drain-filters");
     controls.append(rainLabel, drainLabel);
-
-    // The clock: a rain chart with the current step marked, the slider and play.
-    const clock = el("div", "flood-clock", "—");
-    const chart = el("div", "rain-bars");
-    chart.setAttribute("aria-hidden", "true");
-    const slider = document.createElement("input");
-    Object.assign(slider, { type: "range", min: 0, max: 35, value: 0, step: 1 });
-    slider.className = "flood-slider";
-    slider.setAttribute("aria-label", "Minutes ahead, in 5 minute steps");
-    const play = el("button", "chip play-button", "▶ Play");
-    play.type = "button";
-
     const stats = el("div", "flood-stats");
-    const upcoming = el("div", "upcoming");
-    const legend = el("div", "drain-legend");
-    for (const band of DEPTH_BANDS) {
-        const item = el("span", "drain-legend-item");
-        const swatch = el("i", "drain-swatch");
-        swatch.style.background = band.color;
-        item.append(swatch, band.label);
-        legend.append(item);
-    }
-    const caveat = el("div", "flood-note",
-        "Rain runs over a 30 m DEM, into the drains through their gratings (HEC-22, half " +
-        "clogged), along the surveyed network up to each drain's capacity, and back out of " +
-        "the manholes where a drain is full. Rain is taken as even over the city, and the " +
-        "model is not yet checked against a recorded flood: the order and timing streets " +
-        "flood in are the trustworthy output, and depths over ~1 m are usually DEM error.");
+    container.append(header, mode, controls, note, stats);
+    document.getElementById("ponding-panel")?.append(container);
 
-    container.append(header, mode, note, controls, clock, chart, slider, play, stats, upcoming, legend, caveat);
-    const dock = document.getElementById("ponding-panel");
-    dock?.append(container);
-    return { dock, mode, note, rain, drain, clock, chart, slider, play, stats, upcoming };
+    // The clock lives in the bar under the map: it is the control people use most.
+    const byId = (id) => document.getElementById(id);
+    return {
+        mode, note, rain, drain, stats,
+        clock: byId("tb-clock"), rainNow: byId("tb-rain"), chart: byId("tb-bars"),
+        slider: byId("tb-slider"), play: byId("tb-play"),
+        alerts: byId("alerts"), details: byId("model-details"),
+    };
 })();
 
 // A banner across the map while a scenario is drawn, so a screenshot of it cannot be
@@ -119,6 +101,10 @@ scenarioBanner.onAdd = () => el("div", "scenario-banner");
 
 function showMode(data) {
     const live = data.rain.mode === "live";
+    const started = data.rain.ends?.[0] ? data.rain.ends[0].slice(11, 16) : null;
+    window.shell?.mode(live ? "live" : "scenario", live
+        ? `LIVE${started ? ` · from ${started}` : ""}`
+        : `SCENARIO · ${data.rain.rain_mm_h[0]} mm/h`);
     pondingUi.mode.className = `mode-badge ${live ? "live" : "scenario"}`;
     pondingUi.mode.textContent = live
         ? "LIVE FORECAST · rain from Open-Meteo, next 3 h"
@@ -131,9 +117,7 @@ function showMode(data) {
             `SCENARIO: ${data.rain.rain_mm_h[0]} mm/h for 3 h. Hypothetical rain, not a forecast.`;
     }
     const kind = live ? "forecast" : "scenario";
-    streetTable.title.textContent = live
-        ? "Street flood forecast · every 5 minutes, next 3 hours"
-        : `Street flood scenario (${data.rain.rain_mm_h[0]} mm/h, hypothetical) · every 5 minutes, 3 hours`;
+    streetTable.title.textContent = live ? "Streets · next 3 hours" : `Streets · ${data.rain.rain_mm_h[0]} mm/h what-if`;
     pondingState.kind = kind;
 }
 
@@ -142,7 +126,7 @@ function drawRainChart() {
     const top = Math.max(10, ...rates);
     pondingUi.chart.replaceChildren(...rates.map((rate, i) => {
         const bar = el("i", i === pondingState.step ? "now" : i < pondingState.step ? "past" : "");
-        bar.style.height = `${Math.max(2, (rate / top) * 100)}%`;
+        bar.style.height = `${Math.max(4, (rate / top) * 100)}%`;
         bar.title = `${rate} mm/h`;
         return bar;
     }));
@@ -221,8 +205,8 @@ function drawTable() {
             <td class="num">${now >= 1 ? `<span class="depth-pill" style="background:${nowBand.color}">${now.toFixed(0)}</span>` : "dry"}</td>`;
         tr.tabIndex = 0;
         const go = () => {
-            map.flyTo(row.deepest, 18, { duration: 0.8 });
-            map.getContainer().scrollIntoView({ behavior: "smooth", block: "center" });
+            window.shell?.peek();
+            map.flyTo(row.deepest, 17, { duration: 0.8 });
         };
         tr.addEventListener("click", go);
         tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
@@ -338,6 +322,9 @@ function stretchPopup(p, coords) {
             <span>${esc(p.name || "Unnamed road")}</span>
             <span class="drain-tip-band" style="background:${depthColor(nowMax)}">${nowMax.toFixed(0)} cm now</span>
         </div>
+        <div class="verdict ${p.impassable_at_min != null ? "bad" : "warn"}">${p.impassable_at_min != null
+            ? `Impassable from ${whenLabel(p.impassable_at_min)}: avoid this road`
+            : `Standing water from ${whenLabel(p.floods_at_min)}; passable with care`}</div>
         <table>
             <tr><td>Where</td><td>${esc(p.locality || "—")} · ward ${esc(p.ward || "—")} · zone ${esc(p.zone || "—")}</td></tr>
             <tr><td>Goes under</td><td><b>${whenLabel(p.floods_at_min)}</b></td></tr>
@@ -398,58 +385,83 @@ function drawPonding() {
     }
     // Deepest last, so it draws on top where streets meet.
     pieces.sort((a, b) => a.depth - b.depth);
+    // Thin lines across the city, full width street by street, so a district reads as
+    // streets and not as one blot.
+    const zoom = map.getZoom();
+    const width = zoom >= 15 ? [5, 7] : zoom >= 13 ? [3, 4.5] : [2, 3];
+    const hover = matchMedia("(hover: hover)").matches;
     for (const { depth, feature, points } of pieces) {
         const p = feature.properties;
-        L.polyline(points.map(([lon, lat]) => [lat, lon]), {
+        const line = L.polyline(points.map(([lon, lat]) => [lat, lon]), {
             renderer: pondingRenderer,
             color: depthColor(depth),
-            weight: depth >= data.thresholds.impassable_cm ? 7 : 5,
+            weight: depth >= data.thresholds.impassable_cm ? width[1] : width[0],
             opacity: 0.92,
             lineCap: "round",
         })
-            .bindTooltip(() => tooltipFor(p, depth), { sticky: true, className: "drain-tooltip" })
-            .bindPopup(() => stretchPopup(p, feature.geometry.coordinates),
-                { maxWidth: 320, className: "drain-popup-container" })
+            .on("click", () => window.shell?.detail(stretchPopup(p, feature.geometry.coordinates)))
             .addTo(pondingLayer);
+        // A hover card needs a pointer: on a touch screen it sticks, and a tap opens the
+        // detail in the panel anyway.
+        if (hover) line.bindTooltip(() => tooltipFor(p, depth), { sticky: true, className: "drain-tooltip" });
     }
 
     // Manholes on top of the streets: where the drains put water back on the road,
     // sized by how fast it comes out.
+    // Counted at every zoom, drawn only close up: across the city thousands of dots
+    // would bury the streets they are about.
     let surcharging = 0;
+    const showManholes = map.getZoom() >= MANHOLE_ZOOM;
     for (const feature of data.manholes.features) {
         const p = feature.properties;
         const flow = p.surcharge_l_s[step];
         if (!(flow > 0)) continue;
         surcharging++;
+        if (!showManholes) continue;
         const [lon, lat] = feature.geometry.coordinates;
-        L.circleMarker([lat, lon], {
+        const manhole = L.circleMarker([lat, lon], {
             renderer: pondingRenderer,
             radius: Math.min(10, 3 + Math.sqrt(flow) / 3),
             color: "#fff", weight: 1.5, fillColor: "#0d47a1", fillOpacity: 0.9,
-        }).bindTooltip(() => manholeTooltip(p, pondingState.step),
-            { sticky: true, className: "drain-tooltip", direction: "auto" })
+        }).on("click", () => window.shell?.detail(manholeTooltip(p, pondingState.step)))
             .addTo(pondingLayer);
+        if (hover) manhole.bindTooltip(() => manholeTooltip(p, pondingState.step),
+            { sticky: true, className: "drain-tooltip", direction: "auto" });
     }
 
     const minute = (step + 1) * data.rain.step_minutes;
     const clock = clockAt(step);
-    pondingUi.clock.textContent = `+${minute} min${clock ? ` · ${clock}` : ""}`;
+    pondingUi.clock.textContent = `${clock || "+" + minute + " min"}${clock ? ` · +${minute} min` : ""}`;
+    pondingUi.rainNow.textContent = `☂ ${data.rain.rain_mm_h[step]} mm/h`;
     const counts = data.per_step[step];
+    window.shell?.kpis({ wet: counts.wet, blocked: counts.impassable, manholes: surcharging });
+    const stat = (label, value) => {
+        const row = el("div", "stat");
+        row.append(el("span", "", label), el("b", "", value));
+        return row;
+    };
     pondingUi.stats.replaceChildren(
-        el("div", "drain-stat-line", `${counts.wet.toLocaleString()} named streets under water now · ` +
-            `${counts.impassable.toLocaleString()} impassable`),
-        el("div", "drain-stat-line", `Rain now ${data.rain.rain_mm_h[step]} mm/h · ${data.rain.total_mm} mm over 3 h`),
-        el("div", "drain-stat-line", `${surcharging.toLocaleString()} manholes surcharging now · ` +
-            `${data.surcharging_manholes.toLocaleString()} over the 3 h`),
-        el("div", "drain-stat-line", `Drains at ${Math.round(data.drain_condition * 100)}% of the GCC survey · ` +
-            `${data.model.gratings.toLocaleString()} gratings, ${data.model.open_drain_edge_km} km of open drain edge; ` +
-            `${data.model.zones_without_surveyed_drains.toLocaleString()} of ${data.model.zones.toLocaleString()} ` +
-            `terrain zones (${data.model.unsurveyed_km2} km²) have no surveyed drain and are given drains built for ${data.model.unsurveyed_design_mm_h} mm/h, an assumption`),
-        el("div", "drain-stat-line", massBalance(data.balance_m3)),
-        el("div", "drain-stat-line", `By 3 h: ${data.named_streets.toLocaleString()} streets go under, ` +
-            `${data.impassable_streets.toLocaleString()} impassable, ${data.wet_km} km of road`),
+        el("div", "stats-head", "Over the whole 3 hours"),
+        stat("Streets that go under", data.named_streets.toLocaleString()),
+        stat("Of them impassable (30 cm+)", data.impassable_streets.toLocaleString()),
+        stat("Road under water", `${data.wet_km} km`),
+        stat("Manholes surcharging", data.surcharging_manholes.toLocaleString()),
+        stat("Rain in total", `${data.rain.total_mm} mm`),
     );
-    drawUpcoming();
+    pondingUi.details.replaceChildren(
+        el("p", "", `Rain runs over a 30 m terrain model corrected with the GCC survey, into the drains ` +
+            `through their gratings, along the surveyed network up to each drain's capacity, and back out ` +
+            `of the manholes where a drain is full.`),
+        el("p", "", `Drains at ${Math.round(data.drain_condition * 100)}% of the survey · ` +
+            `${data.model.gratings.toLocaleString()} gratings, ${data.model.open_drain_edge_km} km of open drain edge. ` +
+            `${data.model.unsurveyed_km2} km² has no surveyed drain and is given drains built for ` +
+            `${data.model.unsurveyed_design_mm_h} mm/h (assumed). ${data.model.blind_ends_to_ground?.toLocaleString?.() ?? "Some"} ` +
+            `drains end with no mapped channel; their water is put on the ground there.`),
+        el("p", "", massBalance(data.balance_m3)),
+        el("p", "note", "Not yet checked against a recorded flood: the order and timing streets flood " +
+            "in are the reliable output; depths over about 1 m are usually terrain error."),
+    );
+    drawAlerts();
     drawRainChart();
     drawTable();
 }
@@ -464,25 +476,53 @@ function massBalance(b) {
         `balance error ${Math.abs(b.error_m3).toExponential(1)} m³`;
 }
 
-// The headline: named streets that go under in the next 30 minutes, soonest first.
-function drawUpcoming() {
+// The Alerts tab: what goes under next, soonest first, and what is deepest now.
+function drawAlerts() {
     const data = pondingState.data;
-    const nowMin = (pondingState.step + 1) * data.rain.step_minutes;
-    const soon = data.streets
-        .filter((r) => r.street && r.floods_at_min != null && r.floods_at_min > nowMin && r.floods_at_min <= nowMin + 30)
-        .slice(0, 6);
-    const head = el("div", "upcoming-head", soon.length
-        ? "Going under in the next 30 minutes"
-        : "No named street goes under in the next 30 minutes");
-    pondingUi.upcoming.replaceChildren(head, ...soon.map((r) => {
-        const item = el("button", "upcoming-item");
-        item.type = "button";
-        item.innerHTML = `<span><b>${esc(r.street)}</b> · ${esc(r.locality || r.ward || "")}</span>
-            <span>${whenLabel(r.floods_at_min)}${r.impassable_at_min != null ? " · 30 cm by " +
-                (clockAt(stepOfMinute(r.impassable_at_min)) || "+" + r.impassable_at_min + " min") : ""}</span>`;
-        item.addEventListener("click", () => map.flyTo(r.deepest, 18, { duration: 0.8 }));
-        return item;
-    }));
+    const step = pondingState.step;
+    const nowMin = (step + 1) * data.rain.step_minutes;
+    const reported = data.thresholds.reported_cm;
+    const named = data.streets.filter((r) => r.street);
+    const soon = named
+        .filter((r) => r.floods_at_min != null && r.floods_at_min > nowMin && r.floods_at_min <= nowMin + 30)
+        .slice(0, 12);
+    const deepest = named
+        .filter((r) => r.series_cm[step] >= reported)
+        .sort((a, b) => b.series_cm[step] - a.series_cm[step])
+        .slice(0, 12);
+
+    const item = (r, badge, badgeClass, sub) => {
+        const button = el("button", "alert-item");
+        button.type = "button";
+        const peak = DEPTH_BANDS[bandOf(r.max_depth_cm)];
+        button.innerHTML = `<span class="alert-bar" style="background:${peak.color}"></span>
+            <span class="alert-text"><b>${esc(r.street)}</b>
+                <small>${esc(r.locality || "")}${r.ward ? ` · ${esc(r.ward)}` : ""}</small>
+                <small>${sub}</small></span>
+            <span class="alert-badge ${badgeClass}">${badge}</span>`;
+        button.addEventListener("click", () => {
+            window.shell?.peek();
+            map.flyTo(r.deepest, 17, { duration: 0.8 });
+        });
+        return button;
+    };
+    const section = (title, rows, empty) => {
+        const box = el("section", "alert-group");
+        box.append(el("h3", "", title));
+        box.append(...(rows.length ? rows : [el("p", "alert-empty", empty)]));
+        return box;
+    };
+
+    pondingUi.alerts.replaceChildren(
+        section(`Going under in the next 30 minutes`, soon.map((r) => item(r,
+            `in ${r.floods_at_min - nowMin} min`, "soon",
+            `peaks ${r.max_depth_cm.toFixed(0)} cm${r.impassable_at_min != null ? " · impassable" : ""}`)),
+            "No named street goes under in the next 30 minutes."),
+        section(`Under water at ${clockAt(step) || `+${nowMin} min`}`, deepest.map((r) => item(r,
+            `${r.series_cm[step].toFixed(0)} cm`, r.series_cm[step] >= data.thresholds.impassable_cm ? "bad" : "wet",
+            r.clears_at_min == null ? "still wet at 3 h" : `clears ${whenLabel(r.clears_at_min)}`)),
+            "No named street is under water at this time."),
+    );
 }
 
 // ─── Fetch ─────────────────────────────────────────────────────────────────────
@@ -490,7 +530,9 @@ function drawUpcoming() {
 async function loadPonding() {
     const id = ++pondingState.request;
     stopPlaying();
-    pondingUi.note.textContent = "Running the storm through the terrain and the drains, 3 h in 1-minute steps…";
+    pondingUi.note.textContent = "";
+    window.shell?.loading(true, pondingUi.rain.value
+        ? `Running a ${pondingUi.rain.value} mm/h storm` : "Running the live flood forecast");
     const params = new URLSearchParams();
     // The rain over the drained city: the selected place if it is in Chennai, else the
     // city centre - never wherever the map happens to be panned to.
@@ -509,10 +551,17 @@ async function loadPonding() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         data = await resp.json();
     } catch (err) {
-        if (id === pondingState.request) pondingUi.note.textContent = `Failed: ${err.message}`;
+        if (id === pondingState.request) {
+            window.shell?.loading(false);
+            window.shell?.mode("error", "Forecast unavailable");
+            pondingUi.alerts.replaceChildren(el("p", "alert-empty warn",
+                `The forecast could not be run (${err.message}). It will try again in a minute.`));
+            setTimeout(() => { if (id === pondingState.request) loadPonding(); }, 60_000);
+        }
         return;
     }
     if (id !== pondingState.request) return;
+    window.shell?.loading(false);
     pondingState.data = data;
     pondingState.shown = 300;
     showMode(data);
@@ -522,13 +571,11 @@ async function loadPonding() {
     pondingUi.slider.max = String(data.rain.rain_mm_h.length - 1);
     pondingUi.slider.value = String(pondingState.step);
     pondingUi.note.textContent = data.stretches
-        ? `${data.rain.source} · ${data.stretches.toLocaleString()} street stretches go under`
+        ? `${data.rain.source}`
         : `${data.rain.source}: ${data.rain.total_mm} mm, no street goes under.`;
     streetTable.summary.textContent =
-        `${data.rain.source}, ${data.rain.total_mm} mm in 3 h, drains at ` +
-        `${Math.round(data.drain_condition * 100)}% of the GCC survey: ` +
-        `${data.named_streets.toLocaleString()} named streets go under, ` +
-        `${data.impassable_streets.toLocaleString()} past 30 cm. Soonest first; click a street to go to it.`;
+        `${data.named_streets.toLocaleString()} streets go under, ${data.impassable_streets.toLocaleString()} ` +
+        `past 30 cm. Soonest first; tap one to see it on the map.`;
     drawPonding();
     publishPondingRain();
 }
@@ -559,7 +606,8 @@ function publishPondingRain() {
 function stopPlaying() {
     clearInterval(pondingState.timer);
     pondingState.timer = null;
-    pondingUi.play.textContent = "▶ Play";
+    pondingUi.play.textContent = "▶";
+    pondingUi.play.setAttribute("aria-label", "Play the forecast");
 }
 
 pondingUi.play.addEventListener("click", () => {
@@ -567,7 +615,8 @@ pondingUi.play.addEventListener("click", () => {
     if (!pondingState.data) return;
     const last = pondingState.data.rain.rain_mm_h.length - 1;
     if (pondingState.step >= last) setStep(0);
-    pondingUi.play.textContent = "⏸ Pause";
+    pondingUi.play.textContent = "❚❚";
+    pondingUi.play.setAttribute("aria-label", "Pause");
     pondingState.timer = setInterval(() => {
         if (pondingState.step >= last) return stopPlaying();
         setStep(pondingState.step + 1);
@@ -597,6 +646,8 @@ map.on("overlayadd", (event) => {
 map.on("overlayremove", (event) => {
     if (event.layer !== pondingLayer) return;
     stopPlaying();
+    window.shell?.kpis({});
+    window.shell?.mode("wait", "Flood layer off");
     scenarioBanner.remove();
     // The drains were running on this panel's rain; with it gone, back to live.
     if (window.rainSource.label.startsWith("Flood nowcast")) backToLiveRain();
@@ -605,3 +656,13 @@ map.on("overlayremove", (event) => {
     pondingState.request++;
     pondingLayer.clearLayers();
 });
+
+// The flood forecast is what the page is for: it runs as soon as the page opens, and
+// the live one again every 15 minutes, when the rainfall feed moves on.
+pondingLayer.addTo(map);
+setInterval(() => {
+    if (map.hasLayer(pondingLayer) && !pondingUi.rain.value && !pondingState.timer) loadPonding();
+}, 15 * 60 * 1000);
+
+// Zooming redraws: line widths follow the zoom, and manholes come and go at MANHOLE_ZOOM.
+map.on("zoomend", () => { if (pondingState.data && map.hasLayer(pondingLayer)) drawPonding(); });

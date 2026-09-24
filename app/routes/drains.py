@@ -14,6 +14,7 @@ import asyncio
 import csv
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -135,12 +136,34 @@ def _length_m(props: dict[str, Any]) -> float:
     return 0.0
 
 
+_build_lock = threading.Lock()
+
+
+def network_inputs() -> list[Path]:
+    """Every file the merged drain network is built from, code included."""
+    from app.services import diskcache
+
+    return [CSV_PATH, WARD_POINTS_PATH, SHEETS_PATH, Path(__file__), *diskcache.sources(hydraulics)]
+
+
 def _load_csv() -> list[dict[str, Any]]:
-    """Parse the CSV once, then work out capacities and accumulated catchments."""
+    """The drain network, built once: from disk if nothing it depends on has changed."""
     global _cache
     if _cache is not None:
         return _cache
+    with _build_lock:
+        if _cache is None:
+            from app.services import diskcache
 
+            drains, graph = diskcache.cached("drains", network_inputs(), _build)
+            _graph.clear()
+            _graph.update(graph)
+            _cache = drains
+    return _cache
+
+
+def _build() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Parse the CSV and the ward sheets, then work out capacities and catchments."""
     drains: list[dict[str, Any]] = []
     with open(CSV_PATH, encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh)
@@ -187,8 +210,7 @@ def _load_csv() -> list[dict[str, Any]]:
         })
 
     _accumulate_network(drains)
-    _cache = drains
-    return _cache
+    return drains, dict(_graph)
 
 
 WARD_POINTS_PATH = Path(__file__).resolve().parent.parent / "data" / "ward_points.json"
@@ -677,7 +699,9 @@ async def get_drain_filters(
     When a zone is selected, ward values are scoped to that zone so the
     ward dropdown only shows wards that exist in the chosen zone.
     """
-    all_drains = _load_csv()
+    # Off the event loop: on a cold start the network takes a minute to build, and the
+    # page asks for these the moment it opens.
+    all_drains = await asyncio.to_thread(_load_csv)
 
     scoped = all_drains
     if zone:

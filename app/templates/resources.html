@@ -100,5 +100,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="{{ url_for('static', path='js/resources.js') }}"></script>
+    <script src="{{ url_for('static', path='js/resources.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

@@ -161,9 +161,17 @@ _system_lock = threading.Lock()
 def _coupled_system() -> dict[str, Any]:
     with _system_lock:
         if not _system:
+            from app.routes import drains as drain_route
+            from app.services import diskcache
+
             model = _ponding_model()
-            surface = coupled.build_surface(model)
-            network = coupled.build_network(model, surface, _load_csv(), drain_graph())
+            drains, network_graph = _load_csv(), drain_graph()
+            inputs = [*drain_route.network_inputs(), *rain_ponding.model_inputs(),
+                      *diskcache.sources(coupled)]
+            surface, network = diskcache.cached(
+                "coupled", inputs,
+                lambda: (lambda s: (s, coupled.build_network(model, s, drains, network_graph)))(
+                    coupled.build_surface(model)))
             _system.update({"model": model, "surface": surface, "network": network,
                             "summary": coupled.coupled_summary(network, surface)})
     return _system

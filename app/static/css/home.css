@@ -114,49 +114,8 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* --- Page grid ---------------------------------------------------------------- */
-/* #forecast is display:contents, so the heading, next-rain box, timeline and week
-   table that weather.js builds land in these areas instead of one stacked column. */
-
-.app {
-    max-width: 78rem;
-    margin: 0 auto;
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: minmax(0, 1fr) 21rem;
-    grid-template-areas:
-        "top    top"
-        "status status"
-        "title  rain"
-        "hero   rain"
-        "days   alert"
-        "map    drains"
-        "map    flood"
-        "map    ponding"
-        "map    route"
-        "streets streets"
-        "data   data";
-    align-content: start;
-}
-
-.topbar { grid-area: top; }
-#location-status { grid-area: status; }
-#forecast { display: contents; }
-#forecast > strong { grid-area: title; }
-#weather { grid-area: hero; }
-.forecast { grid-area: days; }
-.timeline { grid-area: rain; align-self: start; }
-.next-rain { grid-area: alert; align-self: start; }
-.map-card { grid-area: map; }
-#drain-panel { grid-area: drains; align-self: start; }
-#flood-panel { grid-area: flood; align-self: start; }
-#ponding-panel { grid-area: ponding; align-self: start; }
-#route-panel { grid-area: route; align-self: start; }
-#street-depths { grid-area: streets; }
-[hidden] { display: none !important; }
-#rain-data { grid-area: data; }
-
-#weather, .timeline, .next-rain, .map-card, #rain-data {
+/* The dashboard lays itself out in the map-page section at the end of this file. */
+#weather, .timeline, .next-rain, #rain-data {
     background: var(--card);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -898,21 +857,6 @@ button { font: inherit; cursor: pointer; }
     font-size: 13px; line-height: 1; text-shadow: 0 0 2px #fff, 0 0 2px #fff;
 }
 
-/* --- Narrow screens ----------------------------------------------------------- */
-
-@media (max-width: 62rem) {
-    body { padding: .9rem; }
-    .app {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            "top" "status" "title" "hero" "days" "rain" "alert" "drains" "map" "route" "flood" "ponding"
-            "streets" "data";
-    }
-    .topbar { border-radius: var(--radius); }
-    /* On one column the map gets the screen, not a letterbox. */
-    #map { height: 70vh; min-height: 24rem; }
-}
-
 /* Flood-safe route: the From/To form, and the result cards under it. */
 .route-field { display: flex; flex-direction: column; gap: .2rem; }
 .route-row { display: flex; gap: .35rem; margin-top: .2rem; }
@@ -946,3 +890,350 @@ button { font: inherit; cursor: pointer; }
 .route-error { padding: .5rem .6rem; border-radius: 10px; background: #fde4e1; color: #a02a20; font-size: .78rem; font-weight: 600; }
 .route-picking { cursor: crosshair; }
 .route-picking .leaflet-interactive { cursor: crosshair; }
+
+/* ══════════════════════════════════════════════════════════════════════════════════
+   Map page: the dashboard as one screen. A full-bleed map; a side panel with tabs (a
+   bottom sheet on a phone); the forecast timeline over the map; the headline numbers
+   in the top bar. Nothing scrolls but the panel.
+   ══════════════════════════════════════════════════════════════════════════════════ */
+
+body.map-page { padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+.shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+/* Depth colours, the same in the timebar, the alerts and the map. */
+:root {
+    --d-wet: #f9a825; --d-stand: #ef6c00; --d-stall: #c62828; --d-deep: #7b1fa2;
+    --side-w: 24rem;
+    --nav-h: 64px;
+    --sheet-h: 0px;
+}
+
+/* ─── Top bar ─── */
+.shell .topbar {
+    flex: none; z-index: 1000;
+    flex-wrap: nowrap; gap: .7rem;
+    padding: .55rem 1rem;
+    border-radius: 0; box-shadow: none;
+    border-bottom: 1px solid var(--line);
+}
+.shell .brand-name { white-space: nowrap; }
+.shell .icon-button { margin-left: 0; flex: none; }
+.status { display: flex; align-items: center; gap: .7rem; flex: 1; min-width: 0; }
+
+.mode-pill {
+    display: inline-flex; align-items: center; gap: .4rem; flex: none;
+    padding: .38rem .75rem; border-radius: 999px;
+    font-size: .74rem; font-weight: 800; letter-spacing: .04em; white-space: nowrap;
+}
+.mode-pill.live { background: #dff3e4; color: #1b6b36; }
+.mode-pill.live::before {
+    content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: #1f9d4d;
+    box-shadow: 0 0 0 0 rgba(31, 157, 77, .6); animation: pulse 2s infinite;
+}
+.mode-pill.scenario {
+    color: #5a3a00;
+    background: repeating-linear-gradient(135deg, #ffe39a 0 8px, #ffd466 8px 16px);
+}
+.mode-pill.error { background: #fde4e1; color: #a02a20; }
+.mode-pill.wait { background: var(--bg); color: var(--muted); }
+@keyframes pulse {
+    70% { box-shadow: 0 0 0 .45rem rgba(31, 157, 77, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(31, 157, 77, 0); }
+}
+
+.kpis { display: flex; gap: .4rem; min-width: 0; }
+.kpi {
+    display: flex; align-items: baseline; gap: .3rem;
+    padding: .3rem .7rem; border-radius: 999px; background: var(--bg); white-space: nowrap;
+}
+.kpi b { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kpi small { font-size: .72rem; font-weight: 600; color: var(--muted); }
+.kpi.wet b { color: var(--d-stand); }
+.kpi.blocked b { color: var(--d-deep); }
+.kpi.manholes b { color: var(--accent); }
+.kpi.zero b { color: var(--faint); }
+
+.top-search input {
+    width: 15rem; font: inherit; font-size: .85rem;
+    padding: .5rem 1rem; border: 1px solid transparent; border-radius: 999px;
+    background: var(--bg); color: var(--ink);
+}
+.top-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+
+/* ─── Stage: side panel + map ─── */
+.stage {
+    position: relative; flex: 1; min-height: 0;
+    display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr);
+}
+.sheet {
+    position: relative; z-index: 900;
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--card); border-right: 1px solid var(--line);
+}
+.sheet-handle { display: none; }
+
+.tabs {
+    flex: none; display: flex; gap: .2rem;
+    padding: .5rem .6rem; border-bottom: 1px solid var(--line);
+}
+.tabs button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: .15rem;
+    min-height: 3rem; padding: .4rem .2rem;
+    border: 0; border-radius: 12px; background: transparent;
+    color: var(--muted); font-size: .72rem; font-weight: 700;
+}
+.tabs button:hover { background: var(--bg); color: var(--ink); }
+.tabs button[aria-selected=true] { background: var(--accent-soft); color: var(--accent-ink); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tab-icon { font-size: 1.1rem; line-height: 1; }
+
+.panels { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem 1rem 2rem; overscroll-behavior: contain; }
+.sheet.has-detail .panel { display: none; }
+
+.panel-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -.01em; }
+.panel-lead { margin: .2rem 0 .8rem; color: var(--muted); font-size: .82rem; }
+
+/* Panels that used to be cards sit flat in the side panel. */
+.sheet .flood-panel, .sheet .drain-control.docked, .sheet #street-depths,
+.sheet #weather, .sheet .timeline, .sheet .next-rain, .sheet #rain-data {
+    padding: 0; background: transparent; box-shadow: none; border-radius: 0;
+}
+.sheet .drain-header { border-bottom: 0; padding-bottom: 0; }
+.sheet .drain-title { font-size: 1.1rem; color: var(--ink); }
+.sheet .drain-icon { display: none; }
+
+.map-wrap { position: relative; min-height: 0; }
+.shell #map { position: absolute; inset: 0; height: auto; border-radius: 0; }
+/* Leaflet's bottom corners stay clear of the timeline. */
+.map-wrap .leaflet-bottom { bottom: 7.2rem; }
+
+/* ─── Timeline ─── */
+.timebar {
+    position: absolute; z-index: 800;
+    left: 1rem; right: 1rem; bottom: 1rem; max-width: 54rem; margin: 0 auto;
+    display: flex; align-items: center; gap: .9rem;
+    padding: .7rem .95rem;
+    background: var(--glass); color: var(--ink);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+}
+.play {
+    flex: none; width: 2.9rem; height: 2.9rem; border: 0; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 1rem; font-weight: 800;
+    box-shadow: 0 6px 16px var(--ring);
+}
+.play:hover { filter: brightness(1.08); }
+.play:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.tb-main { flex: 1; min-width: 0; }
+.tb-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.tb-clock { font-size: .95rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.tb-rain { font-size: .78rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.tb-bars { display: flex; align-items: flex-end; gap: 1px; height: 1.5rem; margin-top: .3rem; }
+.tb-bars i { flex: 1; min-height: 2px; background: var(--line); border-radius: 2px 2px 0 0; }
+.tb-bars i.past { background: var(--accent-2); }
+.tb-bars i.now { background: var(--accent); }
+#tb-slider { display: block; width: 100%; margin: .2rem 0 0; accent-color: var(--accent); cursor: pointer; }
+.tb-scale { display: flex; justify-content: space-between; font-size: .64rem; color: var(--faint); font-weight: 600; }
+.tb-legend {
+    flex: none; display: grid; grid-template-columns: auto auto; gap: .2rem .7rem;
+    font-size: .68rem; font-weight: 600; color: var(--muted);
+}
+.tb-legend i {
+    display: inline-block; width: .8rem; height: .3rem; margin-right: .25rem;
+    border-radius: 2px; vertical-align: middle;
+}
+.tb-legend i.deep { height: .5rem; }
+
+/* ─── Loading ─── */
+.loading {
+    position: absolute; inset: 0; z-index: 950;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.loading-card {
+    display: flex; gap: 1rem; align-items: flex-start;
+    max-width: 22rem; margin: 1rem; padding: 1.1rem 1.25rem;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.loading-card b { font-size: .95rem; }
+.loading-card small { color: var(--muted); font-size: .74rem; }
+.spinner {
+    flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    border: 3px solid var(--accent-soft); border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-steps { margin: .5rem 0 .4rem; padding: 0; list-style: none; font-size: .8rem; color: var(--faint); }
+.loading-steps li { padding: .12rem 0 .12rem 1.3rem; position: relative; }
+.loading-steps li::before { content: "○"; position: absolute; left: 0; }
+.loading-steps li.on { color: var(--ink); font-weight: 700; }
+.loading-steps li.on::before { content: "●"; color: var(--accent); }
+.loading-steps li.done { color: var(--muted); }
+.loading-steps li.done::before { content: "✓"; color: #1f9d4d; }
+
+.skeleton {
+    height: 3.6rem; margin-bottom: .5rem; border-radius: 12px;
+    background: linear-gradient(90deg, var(--bg) 25%, var(--line) 50%, var(--bg) 75%);
+    background-size: 200% 100%; animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ─── Alerts ─── */
+.alert-group + .alert-group { margin-top: 1.1rem; }
+.alert-group h3 {
+    margin: 0 0 .45rem; font-size: .72rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.alert-item {
+    display: flex; align-items: center; gap: .7rem; width: 100%;
+    min-height: 3.4rem; margin-bottom: .4rem; padding: .5rem .7rem .5rem .5rem;
+    text-align: left; font: inherit; color: var(--ink);
+    background: var(--bg); border: 1px solid transparent; border-radius: 12px;
+}
+.alert-item:hover, .alert-item:focus-visible { border-color: var(--accent); outline: none; }
+.alert-bar { flex: none; align-self: stretch; width: 4px; border-radius: 4px; }
+.alert-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.alert-text b { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-text small { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-badge {
+    flex: none; padding: .25rem .55rem; border-radius: 999px;
+    font-size: .72rem; font-weight: 800; white-space: nowrap; color: #fff;
+}
+.alert-badge.soon { background: var(--d-stand); }
+.alert-badge.wet { background: var(--d-stall); }
+.alert-badge.bad { background: var(--d-deep); }
+.alert-empty { margin: 0; padding: .7rem; border-radius: 12px; background: var(--bg); color: var(--muted); font-size: .82rem; }
+
+/* ─── What-if stats ─── */
+.sheet .flood-stats { margin-top: 1rem; padding-top: .8rem; }
+.stats-head { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .3rem; }
+.stat { display: flex; justify-content: space-between; gap: 1rem; padding: .4rem 0; font-size: .85rem; }
+.stat + .stat { border-top: 1px solid var(--line); }
+.stat b { font-variant-numeric: tabular-nums; }
+.sheet .drain-label select, .sheet .route-row input { min-height: 2.6rem; font-size: .9rem; }
+
+/* ─── Street table in the panel: the four columns that answer the question ─── */
+.sheet .street-scroll { max-height: none; border: 0; }
+.sheet .street-table th:nth-child(1), .sheet .street-table td:nth-child(1),
+.sheet .street-table th:nth-child(3), .sheet .street-table td:nth-child(3),
+.sheet .street-table th:nth-child(5), .sheet .street-table td:nth-child(5),
+.sheet .street-table th:nth-child(7), .sheet .street-table td:nth-child(7),
+.sheet .street-table th:nth-child(8), .sheet .street-table td:nth-child(8) { display: none; }
+.sheet .street-table td { white-space: normal; padding: .55rem .45rem; }
+.sheet .street-tools select, .sheet .street-tools input { min-height: 2.5rem; }
+
+/* ─── Street detail ─── */
+.detail-bar { margin: -.2rem 0 .6rem; }
+.back {
+    border: 0; background: var(--bg); color: var(--ink);
+    padding: .5rem .9rem; border-radius: 999px; font-weight: 700; font-size: .82rem;
+}
+.back:hover { background: var(--accent-soft); }
+.detail .drain-tip { font-size: .85rem; }
+.detail .drain-tip-head { padding: 0 0 .6rem; font-size: 1.05rem; border-bottom: 0; }
+.detail .drain-tip td { padding: .35rem 0; }
+.detail .drain-tip tr + tr td { border-top: 1px solid var(--line); }
+.detail .drain-tip-foot { padding: .6rem 0 0; }
+.verdict { margin: 0 0 .7rem; padding: .6rem .75rem; border-radius: 12px; font-weight: 700; font-size: .85rem; }
+.verdict.bad { background: #f3e5f5; color: #5b1470; }
+.verdict.warn { background: #fff3e0; color: #8a4300; }
+:root[data-theme=dark] .verdict.bad { background: #2c1733; color: #e3b5f0; }
+:root[data-theme=dark] .verdict.warn { background: #33230f; color: #ffcf99; }
+
+/* ─── More tab ─── */
+.group { border-bottom: 1px solid var(--line); padding: .3rem 0 .8rem; }
+.group > summary {
+    list-style: none; cursor: pointer; padding: .7rem 0 .5rem;
+    font-weight: 800; font-size: .95rem; display: flex; justify-content: space-between;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::after { content: "+"; color: var(--muted); font-weight: 600; }
+.group[open] > summary::after { content: "–"; }
+.place-tools { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .6rem; }
+.sheet #district-form { flex: 1 1 12rem; display: flex; gap: .4rem; }
+.sheet #district {
+    flex: 1; min-width: 0; padding: .55rem .9rem; font: inherit; font-size: .85rem;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink);
+}
+.sheet #district-form button { border: 0; border-radius: 999px; padding: .55rem 1rem; background: var(--accent); color: #fff; font-weight: 700; }
+.sheet #forecast { display: block; }
+.sheet #forecast > strong { display: block; margin: .8rem 0 .4rem; font-size: .95rem; }
+.sheet .forecast { gap: .4rem; }
+.sheet .forecast tr { flex: 1 1 4.5rem; padding: .6rem .4rem; box-shadow: none; background: var(--bg); }
+.sheet .timeline { margin-top: .8rem; }
+.sheet .next-rain { margin-top: .6rem; padding: .7rem .8rem; background: var(--accent-soft); border-radius: 12px; }
+.sheet .rain-control { min-width: 0; margin-top: .8rem; background: var(--bg); backdrop-filter: none; }
+.switch { display: flex; align-items: center; gap: .6rem; margin: .2rem 0 .8rem; font-weight: 600; font-size: .88rem; cursor: pointer; }
+.switch input { width: 1.2rem; height: 1.2rem; accent-color: var(--accent); }
+#layer-dock .leaflet-control-layers { margin: 0; box-shadow: none !important; border: 0 !important; padding: 0; background: transparent; }
+#layer-dock .leaflet-control-layers label { padding: .35rem 0; font-size: .88rem; }
+.model-details { font-size: .82rem; color: var(--muted); }
+.model-details p { margin: 0 0 .6rem; }
+.model-details .note { padding: .55rem .7rem; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); }
+.about-links a { color: var(--accent-ink); font-weight: 700; }
+
+/* ─── Phone: the panel becomes a bottom sheet, the tabs a bottom bar ─── */
+@media (max-width: 48rem) {
+    .shell .topbar { flex-wrap: wrap; row-gap: .45rem; padding: .45rem .75rem; }
+    .shell .nav, .shell .palette, .top-search { display: none; }
+    .shell .brand-mark { width: 1.8rem; height: 1.8rem; }
+    .shell .brand { margin-right: auto; }
+    .status { order: 3; flex: 1 1 100%; justify-content: space-between; gap: .4rem; }
+    .kpis { gap: .3rem; }
+    .kpi { flex-direction: column; align-items: center; gap: 0; padding: .2rem .55rem; border-radius: 12px; }
+    .kpi b { font-size: .98rem; line-height: 1.1; }
+    .kpi small { font-size: .6rem; }
+
+    .stage { display: block; }
+    .map-wrap { position: absolute; inset: 0; }
+    .map-wrap .leaflet-bottom { bottom: calc(var(--nav-h) + var(--sheet-h) + 7.5rem); }
+
+    .sheet {
+        position: fixed; left: 0; right: 0; bottom: var(--nav-h);
+        height: var(--sheet-h);
+        border-right: 0; border-radius: 22px 22px 0 0;
+        box-shadow: 0 -10px 30px rgba(0, 0, 0, .18);
+        transition: height .28s cubic-bezier(.2, .8, .2, 1);
+    }
+    .sheet.dragging { transition: none; }
+    .sheet-handle {
+        display: flex; align-items: center; justify-content: center; flex: none;
+        width: 100%; height: 26px; padding: 0; border: 0; background: transparent;
+        touch-action: none; cursor: grab;
+    }
+    .sheet-handle span { width: 42px; height: 5px; border-radius: 3px; background: var(--faint); opacity: .6; }
+    .tabs {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+        height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+        padding: .3rem .35rem calc(.3rem + env(safe-area-inset-bottom));
+        background: var(--card); border-top: 1px solid var(--line); border-bottom: 0;
+    }
+    .tabs button { min-height: 0; font-size: .66rem; border-radius: 10px; }
+    .tabs button[aria-selected=true] { background: transparent; }
+    .tabs button[aria-selected=true] .tab-icon {
+        background: var(--accent-soft); border-radius: 999px; padding: .15rem .9rem;
+    }
+    .panels { padding: .1rem 1rem 1.5rem; }
+
+    .timebar {
+        position: fixed; left: .5rem; right: .5rem;
+        bottom: calc(var(--nav-h) + var(--sheet-h) + .5rem);
+        flex-wrap: wrap; gap: .3rem .6rem; padding: .55rem .7rem;
+        transition: bottom .28s cubic-bezier(.2, .8, .2, 1), opacity .2s;
+    }
+    .sheet.dragging ~ .map-wrap .timebar { transition: none; }
+    body[data-sheet=full] .timebar { opacity: 0; pointer-events: none; }
+    .play { width: 2.6rem; height: 2.6rem; }
+    .tb-bars { height: 1rem; }
+    .tb-legend { flex: 1 1 100%; display: flex; justify-content: space-between; }
+    .loading { position: fixed; }
+    /* The pill in the top bar already says SCENARIO; the banner would cover the map. */
+    .scenario-banner { display: none; }
+}
+
+/* Motion off for those who asked. */
+@media (prefers-reduced-motion: reduce) {
+    .sheet, .timebar { transition: none; }
+    .mode-pill.live::before, .skeleton, .spinner { animation: none; }
+}

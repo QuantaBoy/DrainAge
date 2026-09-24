@@ -10,7 +10,8 @@ let deadlineTimer = null;
 let marker = null;
 let accuracyCircle = null;
 
-const map = L.map("map").setView([20, 0], 2);
+// Opens on Chennai: the city the drains and the flood model cover.
+const map = L.map("map", { zoomControl: true }).setView([13.05, 80.235], 12);
 
 // The class is what dark mode inverts in CSS: only the base tiles, never the weather
 // overlays drawn on top of them.
