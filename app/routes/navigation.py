@@ -3,7 +3,7 @@ on the streets.
 
 Two endpoints. /geocode turns a typed place name into a point inside Chennai.
 /route finds the cheapest path through the street graph (app/services/routing.py),
-with each road costed by the water the rain-on-streets forecast has on it for the
+with each road costed by the water the coupled flood nowcast has on it for the
 trip, and sets it against the plain shortest path so the page can show what was
 avoided and why. Both Dijkstra and A* are run and reported: the same route, and how
 much less of the city A* had to search to find it.
@@ -113,11 +113,11 @@ async def get_route(
             raise HTTPException(status_code=422, detail=f"The {name} is {off:.0f} m from the "
                                                         "nearest road in the Chennai street layer")
 
-    model = await asyncio.to_thread(flood._ponding_model)
     rain = await flood._rain_steps(from_lat, from_lon, rain_mm_h)
 
     def run() -> dict[str, Any]:
-        levels = flood._run_ponding(model, rain, runoff_coeff, 0.0, drain_condition)
+        model = flood._coupled_system()["model"]
+        levels = flood._run_coupled(rain, runoff_coeff, drain_condition)["levels"]
         step_min = rain["step_minutes"]
         first = min(max(leave_in_min // step_min - 1, 0), len(levels) - 1)
         last = min(first + TRIP_WINDOW_MIN // step_min, len(levels) - 1)
@@ -160,7 +160,9 @@ async def get_route(
         "algorithm": algorithm,
         "safe_route": safe,
         "no_safe_route": None if safe else
-            "Every way there crosses water over 30 cm in this window: the destination is cut off.",
+            "Every way there crosses water over 30 cm in this window: the destination is cut off."
+            if plain else
+            "No road in the street layer joins these two points, flooded or not.",
         "shortest_route": plain,
         "shortest_route_flooded": {"type": "FeatureCollection", "features": flooded},
         "avoided": {

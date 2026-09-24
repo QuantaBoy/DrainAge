@@ -1,24 +1,25 @@
-"""Street-level flood nowcast: rainfall, drains and terrain coupled end to end.
+"""Street-level flood nowcast: rainfall, terrain and drains coupled end to end.
 
-The chain this route closes, in one place:
+The chain this route closes, in one place, every minute of the next three hours:
 
-  rainfall nowcast (15 minute steps, 0-3 h ahead)
-      -> runoff onto each drain's own strip, arriving at its head junction
-      -> routed through the drain network as a directed graph: junctions (manholes)
-         are nodes, drains are edges, each carrying up to its surveyed capacity
-         (app/services/hydraulics.py)
-      -> what a drain cannot take backs up at the junction it enters at
-      -> that volume is poured onto the ground there (app/terrain.py)
-      -> a depth in centimetres, at a place, at a time.
+  rainfall nowcast (15 minute feed, spread over 5 minute steps)
+      -> runoff on every DEM storage zone and every drain's strip
+      -> caught by the drains' inlets (HEC-22 gratings, open drain edges), routed
+         through the drain network as a directed graph, each drain carrying up to its
+         surveyed Manning capacity (app/services/coupled.py)
+      -> what the drains cannot take surcharges out of the manholes
+      -> the surface spreads it, zone to zone over the terrain, towards the sea
+      -> a depth in centimetres, on a street, at a time.
 
-Water is carried between steps rather than recomputed each time: once a street is
-under water it stays under water until the drain below it has spare capacity again,
-which is the difference between a rainfall map and a flood forecast.
+One model answers every question the page asks: the street table, the map, the
+surcharging manholes and the flood-safe route all read the same run.
 """
 
 import asyncio
 import math
 import re
+import threading
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -27,10 +28,10 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from app.routes.drains import _load_csv, _matches, drain_graph
+from app.routes.drains import _load_csv, drain_graph
 from app.routes.streets import CHENNAI_BBOX
 from app.routes.weather import local_current_step
-from app.services import channels, hydraulics, rain_ponding, street_flood, terrain
+from app.services import channels, coupled, hydraulics, rain_ponding, terrain
 
 router = APIRouter(prefix="/data-collection", tags=["Flood"])
 
@@ -45,8 +46,8 @@ STEPS = NOWCAST_HOURS * 60 // STEP_MINUTES
 REPORT_DEPTH_M = 0.05
 IMPASSABLE_DEPTH_M = 0.30
 
-# A basin is read from the DEM once per manhole and filled at every step.
-_basins: dict[int, dict[str, Any] | None] = {}
+# Where the rain is read when the place asked about is outside the drained city.
+CHENNAI_CENTRE = (13.0827, 80.2707)
 
 
 async def rainfall_nowcast(lat: float, lon: float) -> dict[str, Any]:
@@ -93,58 +94,6 @@ async def rainfall_nowcast(lat: float, lon: float) -> dict[str, Any]:
         "times": times,
         "rain_mm_h": [round(rate, 2) for rate in rates],
     }
-
-
-def _basin_for(node: int, point: list[float]) -> dict[str, Any] | None:
-    """The ground around one junction, read once and kept."""
-    if node not in _basins:
-        lon, lat = point
-        _basins[node] = terrain.basin(lat, lon)
-    return _basins[node]
-
-
-def simulate(rain_series: list[float], strip_m: float, runoff_coeff: float,
-             step_seconds: float) -> dict[int, dict[str, Any]]:
-    """Route the rain through the drain network and report the junctions that surcharge.
-
-    The whole network is routed, whatever the page is filtered to: rain on one ward
-    runs into the next, so a ward's flooding depends on drains outside it. Each entry
-    is one junction (a manhole) with the volume standing there at every step, the
-    drain it is trying to get into, and the drains that meet there.
-    """
-    drains = _load_csv()
-    network = drain_graph()
-    scale = strip_m / hydraulics.STRIP_WIDTH_M
-    edges = [{
-        "nodes": edge["nodes"],
-        "local": edge["local"] * scale,
-        # Unsized drains pass water on rather than inventing a flood.
-        "capacity": drain["capacity"]["effective_capacity_m3s"]
-        if drain["capacity"]["effective_capacity_m3s"] > 0 else None,
-    } for edge, drain in zip(network["edges"], drains)]
-    standing = hydraulics.route(edges, network["graph"], rain_series, runoff_coeff, step_seconds)
-
-    # The drains that end at each junction: the water they deliver is what backs up.
-    arriving: dict[int, list[int]] = {}
-    for i, edge in enumerate(network["edges"]):
-        arriving.setdefault(edge["nodes"][-1], []).append(i)
-
-    carrier = network["graph"]["carrier"]
-    ponded: dict[int, dict[str, Any]] = {}
-    for node, volume in standing.items():
-        full = carrier[node]
-        meeting = [full, *arriving.get(node, [])]
-        ponded[node] = {
-            "point": network["points"][node],
-            # The drain the water cannot get into: the one the report names.
-            "drain": drains[full],
-            "volume": volume,
-            "drains": len(meeting),
-            # Water backing up at a junction stands along the roads its drains run
-            # under before it goes over the kerb.
-            "street_m": sum(drains[i]["length_m"] for i in meeting),
-        }
-    return ponded
 
 
 # The relief image is the same for every visitor and slow to draw, so it is drawn once.
@@ -204,72 +153,37 @@ def _ponding_model() -> dict[str, Any]:
     return model
 
 
-_hollow_capacity: dict[str, Any] = {}
+# The surface zones and the drain network coupled onto them, built once.
+_system: dict[str, Any] = {}
+_system_lock = threading.Lock()
 
 
-def drain_capacity_by_hollow(model: dict[str, Any]) -> np.ndarray:
-    """What the surveyed drains carry out of each DEM hollow's catchment, m³/s.
-
-    The rain model fills a hollow from the land that drains into it; this is what
-    empties it. Every drain sits in one of those catchments, and the ones that carry
-    water out of it are its outfalls - the drains nothing else runs out of. Their
-    surveyed conveyance is the rate the hollow can be emptied at, so a street with a
-    large clear drain below it clears while one with a small or silted drain stays wet.
-
-    The survey does not reach every hollow. Rather than assume those have no drainage
-    (which floods them for ever) or invent a rate for them, they are given the rate
-    the surveyed part of the city has: its total outfall conveyance over the total
-    catchment those outfalls serve. Measured, not guessed, and one aggregate rather
-    than a median of ratios that tiny catchments with a large outfall would skew.
-
-    ponytail: outfall conveyance, not an inlet capacity. A drain can only take water
-    the gully gratings actually reach, and the survey does not record those; where a
-    hollow's water cannot get into the drain beside it, this is optimistic.
-    """
-    if not _hollow_capacity:
-        basins = model["basins"]
-        rows, cols = basins.shape
-        capacity = np.zeros(model["sea"] + 1)
-        for drain in _load_csv():
-            if not drain["is_outfall"]:
-                continue
-            rate = drain["capacity"]["effective_capacity_m3s"]
-            if rate <= 0:
-                continue
-            lon, lat = drain["outlet"]
-            row = math.floor((model["north"] - lat) / model["lat_step"])
-            col = math.floor((lon - model["west"]) / model["lon_step"])
-            if 0 <= row < rows and 0 <= col < cols:
-                capacity[basins[row, col]] += rate
-
-        catchment = model["catchment_m2"]
-        surveyed = (capacity > 0) & (catchment > 0)
-        typical = (float(capacity[surveyed].sum() / catchment[surveyed].sum())
-                   if surveyed.any() else 0.0)
-        filled = np.where(surveyed, capacity, catchment * typical)
-        # The sea and the land between hollows hold nothing to drain.
-        filled[0] = filled[model["sea"]] = 0.0
-        _hollow_capacity.update({
-            "m3s": filled,
-            "surveyed": int(surveyed.sum()),
-            "assumed": int(((filled > 0) & ~surveyed).sum()),
-            # The surveyed rate, as mm/h over the catchment it drains.
-            "typical_mm_h": round(typical * 3.6e6, 1),
-        })
-    return _hollow_capacity["m3s"]
+def _coupled_system() -> dict[str, Any]:
+    with _system_lock:
+        if not _system:
+            model = _ponding_model()
+            surface = coupled.build_surface(model)
+            network = coupled.build_network(model, surface, _load_csv(), drain_graph())
+            _system.update({"model": model, "surface": surface, "network": network,
+                            "summary": coupled.coupled_summary(network, surface)})
+    return _system
 
 
 def warm_ponding() -> None:
-    """Build the rain model, the street sample points and the ward index ahead of use."""
-    model = _ponding_model()
-    rain_ponding._street_cells(model)
+    """Build the zones, the coupled network, the street points and the ward index."""
+    system = _coupled_system()
+    rain_ponding._street_cells(system["model"])
     _place_index()
-    drain_capacity_by_hollow(model)
 
 
-# The rain-on-streets forecast runs in 5 minute steps across the 3 hour window.
+# The flood nowcast reports in 5 minute steps across the 3 hour window.
 PONDING_STEP_MINUTES = 5
 PONDING_STEPS = NOWCAST_HOURS * 60 // PONDING_STEP_MINUTES
+
+
+def _in_chennai(lat: float, lon: float) -> bool:
+    south, west, north, east = CHENNAI_BBOX
+    return south <= lat <= north and west <= lon <= east
 
 
 async def _rain_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[str, Any]:
@@ -277,7 +191,7 @@ async def _rain_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[s
 
     The feed's finest step is 15 minutes, reported as the rain of the 15 minutes before
     each stamp; each is spread evenly over its three 5 minute steps. That is the honest
-    limit of the input: the model steps every 5 minutes, the rain inside a quarter hour
+    limit of the input: the model steps every minute, the rain inside a quarter hour
     is taken as steady. A radar nowcast at 5 minutes would drop straight in here.
     """
     per = STEP_MINUTES // PONDING_STEP_MINUTES
@@ -287,6 +201,10 @@ async def _rain_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[s
         source = (f"Scenario: rain held at {rain_mm_h} mm/h for {NOWCAST_HOURS} h, "
                   f"hypothetical, not a forecast")
     else:
+        # The drains are Chennai's: rain anywhere else is not what they will carry.
+        moved = not _in_chennai(lat, lon)
+        if moved:
+            lat, lon = CHENNAI_CENTRE
         nowcast = await rainfall_nowcast(lat, lon)
         rates = [rate for rate in nowcast["rain_mm_h"] for _ in range(per)][:PONDING_STEPS]
         rates += [0.0] * (PONDING_STEPS - len(rates))
@@ -295,7 +213,9 @@ async def _rain_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[s
         start = datetime.fromisoformat(nowcast["starts_at"])
         ends = [(start + timedelta(minutes=PONDING_STEP_MINUTES * (i + 1))).isoformat(timespec="minutes")
                 for i in range(PONDING_STEPS)]
-        source = f"{nowcast['source']}, next {NOWCAST_HOURS} h"
+        source = (f"{nowcast['source']} at {lat:.3f}, {lon:.3f}"
+                  f"{' (city centre: the place asked about is outside Chennai)' if moved else ''}, "
+                  f"next {NOWCAST_HOURS} h")
     return {
         # A scenario is never passed off as a forecast: every response says which it is.
         "mode": "scenario" if rain_mm_h is not None else "live",
@@ -306,6 +226,29 @@ async def _rain_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[s
         "ends": ends,
         "total_mm": round(sum(rates) * PONDING_STEP_MINUTES / 60, 1),
     }
+
+
+# A run is six seconds of CPU; the map, the street table and the router ask for the
+# same storm, so each run is kept, and only one is computed at a time.
+_runs: "OrderedDict[tuple, dict[str, Any]]" = OrderedDict()
+_RUNS_KEPT = 12
+_run_lock = threading.Lock()
+
+
+def _run_coupled(rain: dict[str, Any], runoff_coeff: float, drain_condition: float) -> dict[str, Any]:
+    """The coupled model for one storm, cached by its rain and settings."""
+    key = (tuple(round(r, 4) for r in rain["rain_mm"]), round(runoff_coeff, 4), round(drain_condition, 4))
+    with _run_lock:
+        if key in _runs:
+            _runs.move_to_end(key)
+            return _runs[key]
+        system = _coupled_system()
+        run = coupled.simulate(system["surface"], system["network"], rain["rain_mm"],
+                               rain["step_minutes"], runoff_coeff, drain_condition)
+        _runs[key] = run
+        if len(_runs) > _RUNS_KEPT:
+            _runs.popitem(last=False)
+        return run
 
 
 # A street is put in the ward of the nearest surveyed drain, if one is this close. The
@@ -435,80 +378,91 @@ def _street_table(stretches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return table
 
 
+# A manhole is reported once this much water has come out of it over the window.
+SURCHARGE_REPORT_M3 = 1.0
+
+
+def _manholes(run: dict[str, Any], step_minutes: float, zone: str | None,
+              ward: str | None) -> list[dict[str, Any]]:
+    """The junctions the drains surcharge out of: where, how much, when, how deep."""
+    system = _coupled_system()
+    network, drains = drain_graph(), _load_csv()
+    carrier = network["graph"]["carrier"]
+    points = network["points"]
+    total = run["surcharge_m3"].sum(axis=0)
+    step_s = step_minutes * 60
+    out = []
+    for node in np.flatnonzero(total >= SURCHARGE_REPORT_M3).tolist():
+        props = drains[carrier[node]]["props"] if node in carrier else {}
+        if (zone and props.get("ZONE") != zone) or (ward and props.get("WARD") != ward):
+            continue
+        series = run["surcharge_m3"][:, node]
+        depth = run["node_depth_m"][:, node]
+        first = int(np.flatnonzero(series > 0)[0])
+        out.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [round(points[node][0], 6), round(points[node][1], 6)]},
+            "properties": {
+                "node": node,
+                # The drain the water is trying to get into: the one that is full.
+                "street": props.get("ST_NAME"), "location": props.get("LOCATION"),
+                "ward": props.get("WARD"), "zone": props.get("ZONE"),
+                "ground_m": None if not math.isfinite(system["network"]["ground"][node])
+                else round(float(system["network"]["ground"][node]), 2),
+                "surcharge_m3": round(float(total[node]), 1),
+                "peak_l_s": round(float(series.max()) / step_s * 1000, 1),
+                "surcharge_l_s": np.round(series / step_s * 1000, 1).tolist(),
+                "depth_cm": np.round(depth * 100, 1).tolist(),
+                "starts_at_min": int(round((first + 1) * step_minutes)),
+            },
+        })
+    out.sort(key=lambda f: f["properties"]["surcharge_m3"], reverse=True)
+    return out
+
+
 _RAIN_MM_H = Query(None, ge=0, le=500, description="Hold the rain at this rate for 3 h "
                                                      "instead of the nowcast, for what-if runs")
-# What the drains take off every catchment. 20 mm/h is a working figure for drains that
-# are open and clear, not a surveyed one; 0 is a network that is full or blocked.
 # How much of each drain's surveyed conveyance is working: 1 is the survey as built,
 # 0.5 half silted, 0 a network that is full or blocked.
 _DRAIN_CONDITION = Query(1.0, ge=0, le=1, description="Share of the surveyed drain "
                                                       "capacity that is working (1 = as surveyed)")
-# Only where the survey reaches no drain out of a hollow.
-_DRAIN_MM_H = Query(0.0, ge=0, le=200, description="Override the drainage everywhere with "
-                                                   "a flat rate, mm/h; 0 uses the survey")
-
-
-def _run_ponding(model: dict[str, Any], rain: dict[str, Any], runoff_coeff: float,
-                 drain_mm_h: float, drain_condition: float) -> Any:
-    capacity = drain_capacity_by_hollow(model) * drain_condition
-    return rain_ponding.simulate(model, rain["rain_mm"], runoff_coeff, drain_mm_h,
-                                 rain["step_minutes"], capacity)
-
-
-@router.get("/rain-ponding", summary="Depth at a coordinate every 5 minutes for 3 hours, from the DEM")
-async def get_rain_ponding(
-    lat: float = Query(..., ge=-90, le=90),
-    lon: float = Query(..., ge=-180, le=180),
-    rain_mm_h: float | None = _RAIN_MM_H,
-    runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1),
-    drain_mm_h: float = _DRAIN_MM_H,
-    drain_condition: float = _DRAIN_CONDITION,
-) -> dict[str, Any]:
-    model = await asyncio.to_thread(_ponding_model)
-    rain = await _rain_steps(lat, lon, rain_mm_h)
-    levels = await asyncio.to_thread(_run_ponding, model, rain, runoff_coeff,
-                                     drain_mm_h, drain_condition)
-    result = rain_ponding.at(model, lat, lon, levels, rain["step_minutes"],
-                             REPORT_DEPTH_M, IMPASSABLE_DEPTH_M)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Outside the DEM, or over the sea")
-    rain.pop("rain_mm")
-    return {**result, "rain": rain, "runoff_coeff": runoff_coeff,
-            "drain_condition": drain_condition, "drain_mm_h": drain_mm_h}
 
 
 @router.get("/rain-ponding/streets",
-            summary="When each street goes under, how deep, and when it clears: 5 minute steps, 3 hours")
+            summary="Coupled flood nowcast: when each street goes under, how deep, when it clears, "
+                    "and which manholes surcharge; 5 minute steps, 3 hours")
 async def get_rain_ponding_streets(
     lat: float = Query(13.0827, ge=-90, le=90, description="Where to take the rainfall nowcast"),
     lon: float = Query(80.2707, ge=-180, le=180),
     rain_mm_h: float | None = _RAIN_MM_H,
     runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1),
-    drain_mm_h: float = _DRAIN_MM_H,
     drain_condition: float = _DRAIN_CONDITION,
     min_depth_cm: float = Query(REPORT_DEPTH_M * 100, ge=1, le=500),
     zone: str | None = Query(None, description="Only streets in this zone, e.g. N07"),
     ward: str | None = Query(None, description="Only streets in this ward, e.g. N082"),
 ) -> dict[str, Any]:
-    model = await asyncio.to_thread(_ponding_model)
     rain = await _rain_steps(lat, lon, rain_mm_h)
     impassable = IMPASSABLE_DEPTH_M * 100
 
-    def run() -> tuple[list[dict[str, Any]], dict[str, list[float]], list[dict[str, Any]]]:
-        levels = _run_ponding(model, rain, runoff_coeff, drain_mm_h, drain_condition)
+    def run() -> dict[str, Any]:
+        result = _run_coupled(rain, runoff_coeff, drain_condition)
+        model = _coupled_system()["model"]
         stretches, water = rain_ponding.flooded_streets(
-            model, levels, rain["step_minutes"], min_depth_cm / 100, IMPASSABLE_DEPTH_M)
+            model, result["levels"], rain["step_minutes"], min_depth_cm / 100, IMPASSABLE_DEPTH_M)
         _label_places(stretches)
         _label_basins(stretches)
         if zone or ward:
             stretches = [f for f in stretches
                          if (not zone or f["properties"]["zone"] == zone)
                          and (not ward or f["properties"]["ward"] == ward)]
-            used = {str(h) for f in stretches for h in f["properties"]["hollow"] if h}
-            water = {h: v for h, v in water.items() if h in used}
-        return stretches, water, _street_table(stretches)
+            used = {str(z) for f in stretches for z in f["properties"]["storage"] if z}
+            water = {z: v for z, v in water.items() if z in used}
+        manholes = _manholes(result, rain["step_minutes"], zone, ward)
+        return {"stretches": stretches, "water": water, "table": _street_table(stretches),
+                "manholes": manholes, "balance": result["balance"]}
 
-    stretches, water, table = await asyncio.to_thread(run)
+    out = await asyncio.to_thread(run)
+    stretches, table = out["stretches"], out["table"]
     named = [r for r in table if r["street"]]
     # Per step: how many named streets are under, and how many are impassable.
     per_step = [
@@ -521,142 +475,28 @@ async def get_rain_ponding_streets(
         "type": "FeatureCollection",
         "features": stretches,
         "streets": table,
+        "manholes": {"type": "FeatureCollection", "features": out["manholes"]},
         # Chennai's drainage is organised by river basin; this says which of them the
         # flooding is in, from the basin model's own channel layer.
         "basins": _basin_table(stretches, impassable),
-        # Water level in every hollow a stretch touches, one per step: depth at a
-        # vertex at step i is water[hollow][i] - ground_m.
-        "water_level_m": water,
+        # Water level in every zone a stretch touches, one per step, null while dry:
+        # depth at a vertex at step i is water[zone][i] - ground_m.
+        "water_level_m": out["water"],
         "rain": rain,
         "runoff_coeff": runoff_coeff,
-        "drain_condition": drain_condition, "drain_mm_h": drain_mm_h,
-        "drainage": {
-            "hollows_from_the_survey": _hollow_capacity["surveyed"],
-            "hollows_at_the_surveyed_rate": _hollow_capacity["assumed"],
-            "surveyed_rate_mm_h": _hollow_capacity["typical_mm_h"],
+        "drain_condition": drain_condition,
+        "model": {
+            **_coupled_system()["summary"],
+            "coupling_step_s": coupled.COUPLE_S,
+            "surface_step_s": coupled.COUPLE_S / coupled.SURFACE_SUBSTEPS,
         },
+        # Where every cubic metre of runoff went, and how well the books close.
+        "balance_m3": out["balance"],
         "stretches": len(stretches),
         "named_streets": len(named),
         "impassable_streets": sum(1 for r in named if r["max_depth_cm"] >= impassable),
         "wet_km": round(sum(r["wet_m"] for r in table) / 1000, 2),
+        "surcharging_manholes": len(out["manholes"]),
         "per_step": per_step,
         "thresholds": {"reported_cm": min_depth_cm, "impassable_cm": impassable},
-    }
-
-
-@router.get("/flood-nowcast", summary="Street-level flood depth, 0-3 hours ahead")
-async def get_flood_nowcast(
-    lat: float = Query(13.0827, ge=-90, le=90, description="Where to take the rainfall nowcast"),
-    lon: float = Query(80.2707, ge=-180, le=180),
-    zone: str | None = Query(None, description="Limit to one zone, e.g. N07"),
-    ward: str | None = Query(None, description="Limit to one ward, e.g. N082"),
-    strip_m: float = Query(hydraulics.STRIP_WIDTH_M, ge=1, le=500),
-    runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1),
-    rain_mm_h: float | None = Query(None, ge=0, le=500,
-                                    description="Hold the rain at this rate instead of "
-                                                "using the nowcast, for what-if runs"),
-    streets: bool = Query(False, description="Also return the street stretches under water"),
-) -> dict[str, Any]:
-    all_drains = await asyncio.to_thread(_load_csv)
-    selected = [d for d in all_drains if _matches(d["props"], {"ZONE": zone, "WARD": ward})]
-    if not selected:
-        raise HTTPException(status_code=404, detail="No drains match those filters")
-
-    if rain_mm_h is None:
-        nowcast = {**await rainfall_nowcast(lat, lon), "mode": "live"}
-    else:
-        nowcast = {
-            "mode": "scenario",
-            "source": f"Scenario: rain held at {rain_mm_h} mm/h, hypothetical, not a forecast",
-            "lat": lat, "lon": lon, "step_minutes": STEP_MINUTES,
-            "times": [f"+{i * STEP_MINUTES} min" for i in range(STEPS)],
-            "rain_mm_h": [rain_mm_h] * STEPS,
-        }
-
-    step_seconds = STEP_MINUTES * 60
-    ponded = await asyncio.to_thread(
-        simulate, nowcast["rain_mm_h"], strip_m, runoff_coeff, step_seconds)
-
-    features = []
-    wet_points = []
-    worst_depth = 0.0
-    for node, entry in ponded.items():
-        drain = entry["drain"]
-        # Routed over the whole city; reported for the zone or ward asked about.
-        if not _matches(drain["props"], {"ZONE": zone, "WARD": ward}):
-            continue
-        point = entry["point"]
-        basin = _basin_for(node, point)
-
-        corridor = entry["street_m"] * terrain.ROAD_WIDTH_M
-        depths, over_kerb = [], False
-        for volume in entry["volume"]:
-            stood = terrain.street_pond(basin, volume, corridor)
-            depths.append(round(stood["depth_m"], 3))
-            over_kerb = over_kerb or stood["over_kerb"]
-        peak = max(depths)
-        if peak < REPORT_DEPTH_M:
-            continue
-        worst_depth = max(worst_depth, peak)
-
-        first = next((i for i, d in enumerate(depths) if d >= REPORT_DEPTH_M), None)
-        props = drain["props"]
-        wet = {
-            "node": node, "lon": point[0], "lat": point[1],
-            # Road level, not the DEM cell: a manhole cell with a roof in it would put
-            # the water level metres too high and flood every street around it.
-            "ground_m": terrain.ground_level(point[1], point[0]),
-            # Shallower than reportable counts as dry, so a street is never drawn wet
-            # at a step its manhole is not.
-            "depth_m": [d if d >= REPORT_DEPTH_M else 0.0 for d in depths],
-            "volume_m3": entry["volume"],
-        }
-        wet_points.append(wet)
-        reaches, levels = street_flood.water_profile(wet)
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": point},
-            "properties": {
-                "node": node,
-                "street": props.get("ST_NAME"),
-                "location": props.get("LOCATION"),
-                "ward": props.get("WARD"),
-                "zone": props.get("ZONE"),
-                "drains_surcharging": entry["drains"],
-                "peak_depth_cm": round(peak * 100, 1),
-                "depth_cm": [round(d * 100, 1) for d in depths],
-                "floods_in_minutes": None if first is None else first * STEP_MINUTES,
-                "impassable": peak >= IMPASSABLE_DEPTH_M,
-                "over_kerb": over_kerb,
-                "street_m": round(entry["street_m"], 1),
-                "ground_m": None if basin is None else round(basin["ground_here_m"], 2),
-                "peak_volume_m3": round(max(entry["volume"]), 1),
-                # How far along the road and how high the water stands, per step: what
-                # the street stretches around this manhole are cut against.
-                "reach_m": [round(r, 1) for r in reaches],
-                "level_m": [None if level is None else round(level, 2) for level in levels],
-            },
-        })
-
-    features.sort(key=lambda f: f["properties"]["peak_depth_cm"], reverse=True)
-    extra: dict[str, Any] = {}
-    if streets:
-        stretches = await asyncio.to_thread(street_flood.flooded_streets, wet_points)
-        extra["streets"] = {"type": "FeatureCollection", "features": stretches}
-        extra["street_names"] = len({f["properties"]["name"] for f in stretches
-                                     if f["properties"]["name"]})
-    return {
-        **extra,
-        "type": "FeatureCollection",
-        "features": features,
-        "nowcast": nowcast,
-        "window_minutes": STEPS * STEP_MINUTES,
-        "drains_considered": len(selected),
-        "flood_points": len(features),
-        "impassable_points": sum(1 for f in features if f["properties"]["impassable"]),
-        "worst_depth_cm": round(worst_depth * 100, 1),
-        "thresholds": {
-            "reported_cm": REPORT_DEPTH_M * 100,
-            "impassable_cm": IMPASSABLE_DEPTH_M * 100,
-        },
     }

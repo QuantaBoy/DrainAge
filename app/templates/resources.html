@@ -8,7 +8,7 @@
         <h1>Resources</h1>
         <p>The wards behind the model. Each card is one ward of the Greater Chennai Corporation:
            the figures come from the drain survey and the hydraulic model, and the base map
-           opens the GCC / SECON-JBA storm water drain sheet the survey was digitised from.</p>
+           opens the ward's GCC / SECON-JBA storm water drain survey sheet (December 2020).</p>
     </section>
 
     <section class="src" aria-labelledby="src-title">
@@ -26,9 +26,13 @@
                 <p class="src-check"><b>Checked against</b> Copernicus COP30 over the same area, and an
                    independent elevation point file.</p>
                 <p class="src-found">COP30 sits 1.00 m above GEDTM30 on land (median), the expected gap
-                   between a surface model and bare earth. The point file turned out to be ellipsoidal,
-                   92.1 m below sea-level heights, so it is not used as a source: it is what confirmed
-                   our heights are above mean sea level.</p>
+                   between a surface model and bare earth. The point file is ellipsoidal: 92.1 m below the
+                   DEM, where the EGM2008 geoid is -92.03 m, so it confirms the heights are above mean sea
+                   level. Against the ward sheets' surveyed road levels at 4,523 manholes, GEDTM30 stands
+                   higher the denser the buildings; that part is taken off, which halves the
+                   manhole-to-manhole spread of the error (2.93 m to 1.68 m). OpenStreetMap buildings leave
+                   water room only between them, and small deep pits are filled unless a mapped tank or
+                   lake is there.</p>
             </li>
 
             <li class="src-card">
@@ -37,11 +41,13 @@
                    levels, ward and zone
                    (<a href="https://data.opencity.in/dataset/chennai-stormwater-drain-swd-maps"
                        target="_blank" rel="noopener">Chennai SWD maps, OpenCity</a>).</p>
-                <p class="src-check"><b>Checked against</b> the GCC / SECON-JBA ward base-map sheets it
-                   was digitised from, ward by ward.</p>
-                <p class="src-found">196 wards across both sources, 91 carry both, and 90 of those agree.
-                   Ward 33's zone disagrees between the sheet and the survey, and ward 35 has a sheet but
-                   no drains in the survey. Both are reported, neither is patched.</p>
+                <p class="src-check"><b>Checked against</b> the GCC / SECON-JBA ward base-map survey:
+                   7,951 manholes read from the 92 sheets, with invert, road-edge level, width and depth.</p>
+                <p class="src-found">Ward and zone agree in 90 of 91 wards (ward 33 differs; ward 35 has no
+                   drains in the survey). The two are separate surveys: at the same manholes their inverts
+                   differ by a median 0.63 m, and the CSV's sections are square where the sheets' are not.
+                   The sheets' own drawn network - 12,566 drains, 1,010 km, measured sections and inverts,
+                   flow direction from the surveyors' arrows - replaces the CSV wherever the sheets reach.</p>
             </li>
 
             <li class="src-card">
@@ -71,8 +77,9 @@
 
         <p class="src-note"><b>Not yet checked:</b> no flood depth or timing has been compared with a
            recorded flood, so the order and timing in which streets flood are the trustworthy output,
-           not exact centimetres. Some surveyed drain sizes also look too small for the land they
-           drain, and ward boundaries are inferred from the nearest surveyed drain.</p>
+           not exact centimetres. Most drain sizes are unverified; the sheets' levels and the DEM
+           differ by an unexplained constant 2.87 m, not applied; and ward boundaries are inferred from
+           the nearest surveyed drain.</p>
     </section>
 
     <section class="res-tools" aria-label="Filter wards">

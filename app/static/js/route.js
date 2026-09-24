@@ -4,7 +4,7 @@
 // The server (app/routes/navigation.py) costs every road by its forecast depth for
 // the trip and runs Dijkstra and A* on the street graph. This draws the safe route,
 // the plain shortest route beside it, and the flooded stretches the shortest one
-// would have driven through. The rainfall and drain settings are the Rain-on-streets
+// would have driven through. The rainfall and drain settings are the flood nowcast
 // panel's, so the route and the flood map always describe the same storm. Uses
 // el/opt/esc (drains.js), depthColor (flood.js) and pondingUi (ponding.js).
 
@@ -165,7 +165,7 @@ async function findRoute() {
         to_lat: end.lat.toFixed(6), to_lon: end.lon.toFixed(6),
         leave_in_min: routeUi.leave.value,
         algorithm: routeUi.algorithm.value,
-        // Same storm as the flood map: the Rain-on-streets panel's settings.
+        // Same storm as the flood map: the flood nowcast panel's settings.
         drain_condition: pondingUi.drain.value,
     });
     if (pondingUi.rain.value) params.set("rain_mm_h", pondingUi.rain.value);
