@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}SIH26085 · Chennai Rain &amp; Drains{% endblock %}
+{% block title %}Chennai Flood Nowcast · SIH26085{% endblock %}
+{% block body_class %}map-page{% endblock %}
+{% block shell %}shell{% endblock %}
+{% block brand %}Flood Nowcast{% endblock %}
 
 {% block head %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -25,51 +28,165 @@
 {% endblock %}
 
 {% block controls %}
-        <button id="use-location" class="chip" type="button">
-            <span aria-hidden="true">📍</span> Use My Location
-        </button>
-
-        <form id="district-form">
-            <input id="district" name="district" aria-label="District or city"
-                   placeholder="Search district, e.g. Kanchipuram"
-                   required minlength="2" maxlength="80" autocomplete="address-level2">
-            <button type="submit">Get Weather</button>
+        <!-- What the whole screen is showing, and the three numbers that matter. -->
+        <div class="status" aria-live="polite">
+            <span id="mode-pill" class="mode-pill wait">Starting…</span>
+            <div class="kpis" id="kpis">
+                <span class="kpi wet"><b id="kpi-wet">–</b><small>streets wet</small></span>
+                <span class="kpi blocked"><b id="kpi-blocked">–</b><small>impassable</small></span>
+                <span class="kpi manholes"><b id="kpi-manholes">–</b><small>manholes</small></span>
+            </div>
+        </div>
+        <form class="top-search" id="top-search" role="search">
+            <input id="top-search-input" type="search" placeholder="Search a street or area"
+                   aria-label="Search a street or area" autocomplete="off">
         </form>
 {% endblock %}
 
 {% block content %}
-    <h1 class="sr-only">Chennai rain and drainage dashboard</h1>
+    <h1 class="sr-only">Chennai street-level flood nowcast, 0 to 3 hours ahead</h1>
 
-    <p id="location-status" aria-live="polite"></p>
+    <main class="stage">
+        <aside class="sheet" id="sheet" data-state="peek" aria-label="Forecast panels">
+            <button class="sheet-handle" id="sheet-handle" type="button"
+                    aria-label="Resize panel"><span></span></button>
 
-    <div id="weather" aria-live="polite"></div>
-    <div id="forecast" aria-live="polite"></div>
+            <nav class="tabs" id="tabs" role="tablist" aria-label="Panels">
+                <button role="tab" data-tab="alerts" aria-selected="true">
+                    <span class="tab-icon" aria-hidden="true">⚠</span><span>Alerts</span></button>
+                <button role="tab" data-tab="streets" aria-selected="false">
+                    <span class="tab-icon" aria-hidden="true">☰</span><span>Streets</span></button>
+                <button role="tab" data-tab="route" aria-selected="false">
+                    <span class="tab-icon" aria-hidden="true">➜</span><span>Route</span></button>
+                <button role="tab" data-tab="whatif" aria-selected="false">
+                    <span class="tab-icon" aria-hidden="true">☂</span><span>What-if</span></button>
+                <button role="tab" data-tab="more" aria-selected="false">
+                    <span class="tab-icon" aria-hidden="true">⋯</span><span>More</span></button>
+            </nav>
 
-    <section class="map-card">
-        <h2>Drainage map</h2>
-        <div id="map"></div>
-    </section>
+            <div class="panels" id="panels">
+                <!-- A street tapped on the map opens here, over whichever tab is showing. -->
+                <section class="detail" id="detail" hidden aria-live="polite">
+                    <div class="detail-bar">
+                        <button type="button" class="back" id="detail-close">← Back</button>
+                    </div>
+                    <div id="detail-body"></div>
+                </section>
 
-    <!-- drains.js docks its filter panel here. Off the map, it stops covering the
-         city and stops fighting the layer control for the same corner. -->
-    <aside id="drain-panel" aria-label="Storm water drain filters"></aside>
-    <aside id="ponding-panel" aria-label="Flood nowcast" hidden></aside>
-    <aside id="route-panel" aria-label="Flood-safe route"></aside>
-    <section id="street-depths" aria-label="Street-level depth table" hidden></section>
+                <section class="panel" data-panel="alerts" role="tabpanel">
+                    <div id="alerts" class="alerts">
+                        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                    </div>
+                </section>
 
-    <section id="rain-data" hidden></section>
+                <section class="panel" data-panel="streets" role="tabpanel" hidden>
+                    <section id="street-depths" aria-label="Street-level depth table" hidden></section>
+                </section>
 
+                <section class="panel" data-panel="route" role="tabpanel" hidden>
+                    <aside id="route-panel" aria-label="Flood-safe route"></aside>
+                </section>
+
+                <section class="panel" data-panel="whatif" role="tabpanel" hidden>
+                    <aside id="ponding-panel" aria-label="What-if storm"></aside>
+                </section>
+
+                <section class="panel" data-panel="more" role="tabpanel" hidden>
+                    <details class="group" open>
+                        <summary>Weather &amp; rainfall</summary>
+                        <div class="place-tools">
+                            <button id="use-location" class="chip" type="button">
+                                <span aria-hidden="true">📍</span> Use my location
+                            </button>
+                            <form id="district-form">
+                                <input id="district" name="district" aria-label="District or city"
+                                       placeholder="Weather for a district"
+                                       required minlength="2" maxlength="80" autocomplete="address-level2">
+                                <button type="submit">Go</button>
+                            </form>
+                        </div>
+                        <p id="location-status" aria-live="polite"></p>
+                        <div id="weather" aria-live="polite"></div>
+                        <div id="forecast" aria-live="polite"></div>
+                        <div id="rain-movement"></div>
+                    </details>
+                    <details class="group">
+                        <summary>Storm water drains</summary>
+                        <label class="switch">
+                            <input type="checkbox" id="drain-switch">
+                            <span>Show the drain network on the map</span>
+                        </label>
+                        <aside id="drain-panel" aria-label="Storm water drain filters"></aside>
+                    </details>
+                    <details class="group">
+                        <summary>Map layers</summary>
+                        <div id="layer-dock"></div>
+                    </details>
+                    <details class="group">
+                        <summary>About the model</summary>
+                        <div id="model-details" class="model-details"></div>
+                        <p class="about-links"><a href="/resources">Data sources &amp; ward maps →</a></p>
+                    </details>
+                    <section id="rain-data" hidden></section>
+                </section>
+            </div>
+        </aside>
+
+        <div class="map-wrap">
+            <div id="map"></div>
+
+            <!-- The main control: where the forecast is in time. -->
+            <div class="timebar" id="timebar">
+                <button class="play" id="tb-play" type="button" aria-label="Play the forecast">▶</button>
+                <div class="tb-main">
+                    <div class="tb-top">
+                        <span class="tb-clock" id="tb-clock">Now</span>
+                        <span class="tb-rain" id="tb-rain"></span>
+                    </div>
+                    <div class="tb-bars" id="tb-bars" aria-hidden="true"></div>
+                    <input id="tb-slider" type="range" min="0" max="35" value="0" step="1"
+                           aria-label="Minutes ahead, in 5 minute steps">
+                    <div class="tb-scale" aria-hidden="true"><span>Now</span><span>+1 h</span><span>+2 h</span><span>+3 h</span></div>
+                </div>
+                <div class="tb-legend" aria-label="Water depth">
+                    <span><i style="background:#f9a825"></i>&lt;5</span>
+                    <span><i style="background:#ef6c00"></i>5–15</span>
+                    <span><i style="background:#c62828"></i>15–30</span>
+                    <span><i class="deep" style="background:#7b1fa2"></i>30+ cm</span>
+                </div>
+            </div>
+
+            <!-- While the storm runs: what is happening, not a frozen screen. -->
+            <div class="loading" id="loading" hidden role="status">
+                <div class="loading-card">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <div>
+                        <b id="loading-title">Running the flood forecast</b>
+                        <ol class="loading-steps" id="loading-steps">
+                            <li>Rainfall, next 3 hours</li>
+                            <li>Terrain and buildings</li>
+                            <li>19,500 drains and manholes</li>
+                            <li>Street by street depths</li>
+                        </ol>
+                        <small id="loading-time"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
 {% endblock %}
 
 {% block scripts %}
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <!-- Order matters: location.js creates the map that layers.js and weather.js use. -->
-    <script src="{{ url_for('static', path='js/location.js') }}"></script>
-    <script src="{{ url_for('static', path='js/layers.js') }}"></script>
-    <script src="{{ url_for('static', path='js/weather.js') }}"></script>
-    <script src="{{ url_for('static', path='js/drains.js') }}"></script>
-    <script src="{{ url_for('static', path='js/flood.js') }}"></script>
-    <script src="{{ url_for('static', path='js/ponding.js') }}"></script>
-    <script src="{{ url_for('static', path='js/route.js') }}"></script>
+    <!-- Order matters: location.js creates the map that layers.js and weather.js use;
+         shell.js lays the screen out and the panels after it fill it in. -->
+    <script src="{{ url_for('static', path='js/location.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/shell.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/layers.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/weather.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/drains.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/flood.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/ponding.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/route.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

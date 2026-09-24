@@ -147,7 +147,8 @@ function esc(value) {
 const drainUi = (() => {
     const dock = document.getElementById("drain-panel");
     const container = el("div", dock ? "drain-control docked" : "drain-control leaflet-bar");
-    container.hidden = true;
+    // Docked in its panel the filters are always there: they also scope the flood forecast.
+    container.hidden = !dock;
 
     // Header
     const header = el("div", "drain-header");
@@ -702,18 +703,23 @@ drainUi.colorSelect.addEventListener("change", () => {
 renderLegend();
 
 // Show/hide panel and load data when the overlay is toggled.
+const drainSwitch = document.getElementById("drain-switch");
 map.on("overlayadd", (event) => {
     if (event.layer !== drainLayer) return;
     drainUi.container.hidden = false;
-    document.getElementById("drain-panel")?.removeAttribute("hidden");
+    if (drainSwitch) drainSwitch.checked = true;
     loadDrainFilters().then(loadDrains);
 });
 map.on("overlayremove", (event) => {
     if (event.layer !== drainLayer) return;
-    drainUi.container.hidden = true;
-    document.getElementById("drain-panel")?.setAttribute("hidden", "");
+    if (!document.getElementById("drain-panel")) drainUi.container.hidden = true;
+    if (drainSwitch) drainSwitch.checked = false;
     drainState.request++;
 });
+drainSwitch?.addEventListener("change", () => {
+    if (drainSwitch.checked) drainLayer.addTo(map); else map.removeLayer(drainLayer);
+});
 
-// The drainage network is the dashboard's base layout, so it is shown from the start.
-drainLayer.addTo(map);
+// The map opens on the flood, not the drains: their load colours would compete with
+// the depth colours. The filters are filled now, because they scope the flood too.
+loadDrainFilters();

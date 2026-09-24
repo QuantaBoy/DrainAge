@@ -119,6 +119,7 @@ for (const field of [routeUi.from, routeUi.to]) {
         if (event.key === "Enter") findRoute();
     });
     field.pick.addEventListener("click", () => {
+        window.shell?.peek();
         routeState.picking = field;
         window.routePicking = true;
         map.getContainer().classList.add("route-picking");
@@ -220,6 +221,7 @@ function drawRoute(data, start, end) {
     const bounds = L.latLngBounds([[start.lat, start.lon], [end.lat, end.lon]]);
     if (safe) bounds.extend(L.polyline(lineOf(safe.geometry)).getBounds());
     map.fitBounds(bounds, { padding: [30, 30] });
+    window.shell?.tab("route");
 
     // The card: the route, what it avoided, and how the two searches compared.
     const w = data.trip_window;

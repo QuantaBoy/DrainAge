@@ -23,7 +23,11 @@ for (const [label, layer] of WEATHER_LAYERS) {
     });
 }
 
-const layerControl = L.control.layers(null, weatherOverlays, { collapsed: false }).addTo(map);
+// On the dashboard the layer list lives in the side panel, so nothing but the flood sits
+// over the map; elsewhere it folds into an icon on the map.
+const layerDock = document.getElementById("layer-dock");
+const layerControl = L.control.layers(null, weatherOverlays, { collapsed: !layerDock, position: "topright" }).addTo(map);
+if (layerDock) layerDock.append(layerControl.getContainer());
 
 // --- Street network --------------------------------------------------------------
 // Chennai's roads, fetched once and cached server-side; this is the geometry later
@@ -204,11 +208,18 @@ const rainUi = (() => {
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
 
-    const RainControl = L.Control.extend({
-        options: { position: "bottomleft" },
-        onAdd: () => container,
-    });
-    new RainControl().addTo(map);
+    // On the dashboard it sits in the weather panel, clear of the forecast timeline.
+    const dock = document.getElementById("rain-movement");
+    if (dock) {
+        container.classList.remove("leaflet-bar");
+        dock.append(container);
+    } else {
+        const RainControl = L.Control.extend({
+            options: { position: "bottomleft" },
+            onAdd: () => container,
+        });
+        new RainControl().addTo(map);
+    }
 
     return { container, play, scrubber, time, note };
 })();
