@@ -1,26 +1,18 @@
-"""Rain that stands where it falls, minute by minute: every hollow in the DEM, filled
-from its own catchment as the storm goes on, and emptied by the drains after it.
+"""The ground the flood runs over: the DEM cut into storage zones, and the streets on it.
 
-The drain model (app/routes/flood.py) puts water on a street only where a drain
-overflows. Rain also ponds with no drain involved: every dip in the ground collects
-what falls on the land that drains into it. This module finds those dips once, then
-runs a rainfall series through them in 5 minute steps, and answers for every street
-when the water arrives, how deep it gets, and when it goes.
+The coupled model (app/services/coupled.py) moves water between these zones and the
+drains. This module prepares the terrain it runs on, and reads the answer back out
+street by street.
 
-  1. Fill. Every depression is filled to its spill point by morphological
-     reconstruction, which gives the same surface as a priority-flood fill.
-     filled - ground is how deep water can stand at a cell before it runs out.
-  2. Catchments. A watershed on the DEM, seeded from the depressions and from the
-     outlets (the sea and the edge of the box), gives each cell the hollow its rain
-     runs into.
-  3. Step. Each step, a hollow gains runoff (rain x runoff coefficient x catchment)
-     and loses what the drains carry off its catchment. The water it holds stands at
-     the level the hypsometric fill gives (lowest cells first, as terrain.fill_depth),
-     never above the spill point.
-
-ponytail: water over the spill point leaves the model. It does not cascade into the
-next hollow downstream; a fill-spill-merge pass or a 2D solver would add that. Drains
-are a flat rate in mm/h over every catchment, not the network flood.py sizes.
+  1. Condition. The DEM is smoothed, and every mapped river, canal and nullah is burned
+     into it, so a 30 m grid does not read road embankments and culverts as dams.
+  2. Zones. Every regional minimum at least MIN_HOLLOW_M deep seeds a zone, and a
+     watershed gives each cell the minimum its rain runs to. Nested hollows stay
+     separate zones - two dips either side of a low ridge fill on their own and join
+     only once water tops the ridge, which the surface model's weirs decide. The sea
+     and the edge of the box form one more zone, where water leaves the model.
+  3. Streets. Every 20 m point of every OpenStreetMap road sits in a zone; its depth at
+     a step is the zone's water level less its ground.
 """
 
 import json
@@ -30,185 +22,55 @@ from typing import Any
 
 import numpy as np
 from scipy import ndimage
-from skimage.morphology import reconstruction
+from skimage.morphology import h_minima
 from skimage.segmentation import watershed
 
-from app.services import channels, terrain
+from app.services import terrain
 
-# A hollow shallower than this at its deepest is DEM noise, not somewhere water stands.
+# A dip shallower than this is DEM noise, not somewhere water stands on its own.
 MIN_HOLLOW_M = terrain.MIN_DEPTH_M
 
-# Median filter over the DEM before filling, in cells. At 30 m, GEDTM30 in a dense
-# block like T. Nagar jumps 3-5 m cell to cell where buildings bleed through, and every
-# such pit fills to its rim: 4 m of "water" on Venkatanarayana Road. A 3 x 3 median
-# (90 m) removes those pits and keeps Pallikaranai, Porur and Puzhal; 5 x 5 starts to
-# erase Porur lake. A calibration knob: set it against surveyed flood marks.
+# Median filter over the DEM before anything else, in cells. At 30 m, GEDTM30 in a
+# dense block like T. Nagar jumps 3-5 m cell to cell where buildings bleed through, and
+# every such pit fills to its rim: 4 m of "water" on Venkatanarayana Road. A 3 x 3
+# median (90 m) removes those pits and keeps Pallikaranai, Porur and Puzhal; 5 x 5
+# starts to erase Porur lake. A calibration knob: set it against surveyed flood marks.
 SMOOTH_CELLS = 3
 
 # Stream burning: DEM cells under a mapped river, canal or nullah are lowered by this
-# much before filling. Every road embankment and culvert across a canal reads as a dam
-# at 30 m, and upstream of each one the canal becomes a closed "lake" several metres
-# deep that the fill then puts on every street beside it. Burning the channel in lets
-# it drain the way the real one does. Waterways come from /data-collection/waterways.
+# much. Every road embankment and culvert across a canal reads as a dam at 30 m, and
+# upstream of each one the canal becomes a closed "lake" several metres deep. Burning
+# the channel in lets it drain the way the real one does. Two channel layers, because
+# neither is complete: OpenStreetMap's waterways, and the basin model's own macro and
+# micro drains, canals and surplus channels (app/services/channels.py).
 BURN_M = 2.0
 WATERWAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_waterways.geojson"
-# Two channel layers, because neither is complete: OpenStreetMap's waterways, and the
-# basin model's own macro and micro drains, canals and surplus channels
-# (app/services/channels.py), 78 km of which inside the city are on no other layer.
 
-# How fast runoff crosses a catchment to its hollow, m/s: sheet flow and gutters on
-# flat paved ground. A catchment of side L takes L / speed to deliver its rain, so a
-# 1 km² one keeps filling for half an hour after the rain stops. ponytail: one speed
-# for the city; slope and surface per catchment would refine it. Calibrate against
-# the time lag between rain and water on known streets.
-FLOW_SPEED_M_S = 0.5
 _EIGHT = np.ones((3, 3), dtype=bool)
-
 _model: dict[str, Any] | None = None
 
 
 def prepare(surface: np.ndarray, outlet: np.ndarray, cell_area_m2: float) -> dict[str, Any]:
-    """Hollows, catchments and fill curves for one ground grid.
+    """Storage zones for one ground grid.
 
     `surface` is finite everywhere; `outlet` marks the cells where water leaves the
-    model (the sea, the edge of the box).
+    model (the sea, the edge of the box), which all become the last zone, `sea`.
     """
-    seed = np.where(outlet, surface, surface.max())
-    filled = reconstruction(seed, surface, method="erosion")
-    capacity_depth = filled - surface
-
-    labels, count = ndimage.label((capacity_depth > 1e-6) & ~outlet, structure=_EIGHT)
-    if count:
-        deepest = ndimage.maximum(capacity_depth, labels, index=np.arange(1, count + 1))
-        keep = np.concatenate([[False], np.asarray(deepest) >= MIN_HOLLOW_M])
-        labels = np.where(keep[labels], labels, 0)
+    # Outlets set below everything, so the ground falling towards the sea is not taken
+    # for a hollow at the shoreline.
+    ground = np.where(outlet, surface.min() - 1.0, surface)
+    minima = h_minima(ground, MIN_HOLLOW_M).astype(bool) & ~outlet
+    labels, count = ndimage.label(minima, structure=_EIGHT)
     sea = count + 1
-
     markers = labels.copy()
     markers[outlet] = sea
-    basins = watershed(surface, markers, connectivity=2)
-    catchment_m2 = np.bincount(basins.ravel(), minlength=sea + 1) * cell_area_m2
-    # The sea and the ground between hollows collect nothing that stands anywhere.
-    catchment_m2[0] = catchment_m2[sea] = 0.0
-
-    # Each hollow's cells sorted lowest first, with the volume it takes to bring the
-    # water up to each one: the fill curve, cut into groups by hollow.
-    cells = np.flatnonzero(labels)
-    order = np.lexsort((surface.flat[cells], labels.flat[cells]))
-    cells = cells[order]
-    hollow = labels.flat[cells]
-    ground = surface.flat[cells]
-    start = np.full(sea + 1, -1)
-    firsts = np.flatnonzero(np.r_[True, np.diff(hollow) != 0]) if cells.size else np.array([], int)
-    start[hollow[firsts]] = firsts
-    rank = np.arange(cells.size) - start[hollow]
-    running = np.cumsum(ground)
-    below = running - ground - (running - ground)[start[hollow]]   # sum of lower cells
-    spill = np.full(sea + 1, -np.inf)
-    np.maximum.at(spill, hollow, filled.flat[cells])
-    capacity = np.zeros(sea + 1)
-    np.add.at(capacity, hollow, (spill[hollow] - ground) * cell_area_m2)
-
-    return {
-        "surface": surface, "labels": labels, "basins": basins, "sea": sea,
-        "cell_area_m2": cell_area_m2, "catchment_m2": catchment_m2, "spill_m": spill,
-        "capacity_m3": capacity,
-        "cells": cells, "hollow": hollow, "ground": ground, "start": start,
-        "size": np.bincount(hollow, minlength=sea + 1),
-        "curve_m3": (rank * ground - below) * cell_area_m2,
-        "upto": below + ground,                                         # sum up to and including
-    }
-
-
-def water_levels(model: dict[str, Any], volume_m3: np.ndarray) -> np.ndarray:
-    """The level water stands at in every hollow, given the volume in each.
-
-    -inf where there is no hollow, so a depth taken from it is never positive.
-    """
-    v = volume_m3[model["hollow"]]
-    wet = model["curve_m3"] <= v
-    covered = np.bincount(model["hollow"][wet], minlength=model["sea"] + 1)
-    level = np.full(model["sea"] + 1, -np.inf)
-    has = covered > 0
-    last = model["start"][has] + covered[has] - 1
-    level[has] = (volume_m3[has] / model["cell_area_m2"] + model["upto"][last]) / covered[has]
-    return np.minimum(level, model["spill_m"])
-
-
-def simulate(model: dict[str, Any], rain_mm: list[float], runoff_coeff: float,
-             drain_mm_h: float, step_minutes: float,
-             drain_m3s: np.ndarray | None = None) -> np.ndarray:
-    """Water level in every hollow at the end of every step, shape (steps, hollows).
-
-    `rain_mm` is the rain that falls in each step, taken as falling evenly over the
-    city. Water builds while the runoff arriving is more than the drains take and goes
-    down once it is less, so a street floods after the rain starts, peaks after it
-    peaks, and clears after it stops.
-
-    `drain_m3s` is what the surveyed drains carry out of each hollow, one rate per
-    hollow, from app/routes/flood.py. Where it is None, or zero for a hollow the
-    survey does not reach, `drain_mm_h` stands in as a flat rate over the catchment.
-    """
-    step_seconds = step_minutes * 60.0
-    drained_m = drain_mm_h / 1000.0 * step_minutes / 60.0
-    catchment = model["catchment_m2"]
-    # Per step, in m³: what the drains below each hollow can take away.
-    drained_m3 = np.full_like(catchment, np.nan) if drain_m3s is None else drain_m3s * step_seconds
-    if drain_m3s is not None:
-        # A hollow with no surveyed drain falls back to the flat allowance rather than
-        # being treated as having no drainage at all.
-        drained_m3 = np.where(drain_m3s > 0, drained_m3, catchment * drained_m)
-    # Rain on the far edge of a catchment takes time to run to the hollow. Each hollow
-    # takes its runoff spread evenly over its time of concentration: the rain of the
-    # last n steps, averaged, where n is how long water takes to cross the catchment.
-    travel_s = np.sqrt(catchment) / FLOW_SPEED_M_S
-    lag = np.maximum(1, np.ceil(travel_s / (step_minutes * 60.0))).astype(int)
-    fallen = np.r_[0.0, np.cumsum(rain_mm)]                 # rain fallen by the end of each step
-    volume = np.zeros_like(catchment)
-    levels = []
-    for step in range(len(rain_mm)):
-        arriving_mm = (fallen[step + 1] - fallen[np.maximum(0, step + 1 - lag)]) / lag
-        arriving_m3 = catchment * (arriving_mm / 1000.0 * runoff_coeff)
-        taken = catchment * drained_m if drain_m3s is None else drained_m3
-        gain = arriving_m3 - taken
-        # Past the spill point the water runs on out of the model; it is not held
-        # back to delay the hollow emptying later.
-        volume = np.clip(volume + gain, 0.0, model["capacity_m3"])
-        levels.append(water_levels(model, volume))
-    return np.array(levels)
-
-
-def depth_grid(model: dict[str, Any], level: np.ndarray) -> np.ndarray:
-    """Standing water depth over the whole grid at one step, metres, above the land."""
-    return np.clip(level[model["labels"]] - model.get("land", model["surface"]), 0.0, None)
-
-
-def timeline(series_m: np.ndarray, step_minutes: float, wet_m: float,
-             impassable_m: float) -> dict[str, Any]:
-    """When a depth series crosses the thresholds, in minutes from the start.
-
-    Step i is the state at the end of minute (i + 1) x step_minutes. None where the
-    series never gets there.
-    """
-    def first(mask: np.ndarray, after: int = 0) -> int | None:
-        hits = np.flatnonzero(mask[after:])
-        return None if hits.size == 0 else int(hits[0]) + after
-
-    minutes = lambda i: None if i is None else int(round((i + 1) * step_minutes))
-    wet = series_m >= wet_m
-    floods = first(wet)
-    peak = int(series_m.argmax())
-    clears = None if floods is None else first(~wet, peak)
-    return {
-        "floods_at_min": minutes(floods),
-        "impassable_at_min": minutes(first(series_m >= impassable_m)),
-        "peak_at_min": minutes(peak) if floods is not None else None,
-        "clears_at_min": minutes(clears),
-    }
+    zones = watershed(surface, markers, connectivity=2)
+    return {"surface": surface, "labels": labels, "basins": zones, "sea": sea,
+            "cell_area_m2": cell_area_m2}
 
 
 def load(south: float, north: float, west: float, east: float) -> dict[str, Any] | None:
-    """The model over a box, built once from whichever DEM terrain.py is reading."""
+    """The zones over a box, built once from whichever DEM terrain.py is reading."""
     global _model
     if _model is not None:
         return _model
@@ -217,15 +79,29 @@ def load(south: float, north: float, west: float, east: float) -> dict[str, Any]
         return None
 
     ground = dem["grid"].astype(np.float64)
-    outlet = ~np.isfinite(ground)
-    if dem["sea_is_zero"]:
-        outlet |= ground == 0.0
+    # The sea: no-data, or exactly 0 m. Copernicus flattens open water to 0, and GEDTM30
+    # stores stretches of the Bay of Bengal as 0 too; land never reads exactly 0.0.
+    outlet = ~np.isfinite(ground) | (ground == 0.0)
     if terrain.source_info()["kind"] == "surface":
         # A surface model reads roofs as ground; the road is the lowest thing around.
         ground = ndimage.minimum_filter(np.where(outlet, np.inf, ground), size=3, mode="nearest")
     if SMOOTH_CELLS > 1:
         ground = ndimage.median_filter(np.where(outlet, np.nanmin(ground[~outlet]), ground),
                                        size=SMOOTH_CELLS, mode="nearest")
+    grid_at = dict(north=north, west=west, step=dem["lat_step"], shape=ground.shape)
+    # Down to the surveyed road levels where the ward sheets measured them.
+    correction = survey_correction(dem["grid"], **grid_at)
+    # Taking off buildings and trees cannot dig below the bare ground around them: the
+    # lowest reading within FLOOR_RADIUS_M is a floor. Without it the beach, a few
+    # hundred metres from built-up blocks, went below the sea.
+    floor_size = max(3, int(round(2 * FLOOR_RADIUS_M / (dem["lat_step"] * terrain.M_PER_DEG))) | 1)
+    floor = ndimage.minimum_filter(np.where(np.isfinite(ground), ground, np.inf), size=floor_size)
+    lowered = np.maximum(ground - correction, floor)
+    correction = np.where(np.isfinite(ground), ground - lowered, 0.0)     # as applied
+    ground = lowered
+    # Pits too small to be anything but noise are filled; mapped water bodies are kept.
+    water = _grid_layer(WATER_PATH, **grid_at)
+    ground, pits = _fill_pits(ground, outlet, water)
     ground[outlet] = np.nan
     # The land as it is, for depths: burning only decides where water can run.
     land = np.where(np.isfinite(ground), ground, np.nanmin(ground) - 1.0)
@@ -238,11 +114,169 @@ def load(south: float, north: float, west: float, east: float) -> dict[str, Any]
     mid = math.radians((south + north) / 2)
     cell_area = (dem["lat_step"] * terrain.M_PER_DEG) * (dem["lon_step"] * terrain.M_PER_DEG * math.cos(mid))
     model = prepare(surface, outlet, cell_area)
+    buildings = _grid_layer(BUILDINGS_PATH, **grid_at)
     model.update({"north": north, "west": west, "lat_step": dem["lat_step"],
                   "lon_step": dem["lon_step"], "outlet": outlet, "burned_cells": burned,
-                  "land": land})
+                  "land": land, "water": water,
+                  # What share of each cell water can stand on: all of it but the buildings.
+                  "open": np.ones(ground.shape) if buildings is None else 1.0 - buildings,
+                  "conditioning": {
+                      "survey_correction_m": {
+                          **getattr(survey_correction, "last", {}),
+                          "median_over_land": round(float(np.median(correction[~outlet])), 2),
+                          "max": round(float(correction[~outlet].max()), 2)},
+                      "pits_filled_cells": pits,
+                      "buildings": buildings is not None,
+                      "water_bodies": water is not None,
+                  }})
     _model = model
     return _model
+
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+BUILDINGS_PATH = DATA_DIR / "building_fraction.npz"
+WATER_PATH = DATA_DIR / "water_bodies.npz"
+WARD_POINTS_PATH = DATA_DIR / "ward_points.json"
+
+# A closed hollow covering fewer cells than this (about 1.5 ha at 30 m) is taken for DEM
+# noise - a building footprint bleeding through a bare-earth model - and filled to its
+# rim, unless a mapped water body is there. A calibration knob: raise it and fewer small
+# low spots survive; temple tanks and ponds are kept by the water layer either way.
+PIT_MAX_CELLS = 16
+# A deeper hollow is noise over a larger area: on ground as flat as Chennai's nothing
+# but a tank, a lake or a quarry is more than DEEP_PIT_M deep and under DEEP_PIT_CELLS
+# (about 6 ha), and the tanks and lakes are mapped. Checked on 13th Street, Ashok
+# Nagar: a 30 m hollow read 2 m deep five minutes into a storm.
+DEEP_PIT_CELLS = 64
+DEEP_PIT_M = 1.0
+# A cell at least this much water body keeps its real ground.
+WATER_SHARE = 0.3
+
+
+def _grid_layer(path: Path, north: float, west: float, step: float, shape: tuple) -> np.ndarray | None:
+    """A 0-1 share per cell saved by fetch_buildings.py, if it is on this grid."""
+    if not path.exists():
+        return None
+    data = np.load(path)
+    same = (abs(float(data["north"]) - north) < 1e-7 and abs(float(data["west"]) - west) < 1e-7
+            and abs(float(data["step"]) - step) < 1e-9 and data["fraction"].shape == shape)
+    return data["fraction"].astype(np.float64) / 250.0 if same else None
+
+
+def _fill_pits(ground: np.ndarray, outlet: np.ndarray, water: np.ndarray | None) -> tuple[np.ndarray, int]:
+    """Fill every closed hollow smaller than PIT_MAX_CELLS, and every one deeper than
+    DEEP_PIT_M smaller than DEEP_PIT_CELLS, nested ones included; mapped water stays."""
+    from skimage.morphology import area_closing
+
+    if PIT_MAX_CELLS <= 1:
+        return ground, 0
+    low = np.nanmin(ground[~outlet]) - 1.0
+    work = np.where(outlet, low, ground)
+    closed = area_closing(work, area_threshold=PIT_MAX_CELLS, connectivity=2)
+    wider = area_closing(work, area_threshold=DEEP_PIT_CELLS, connectivity=2)
+    closed = np.where(wider - work > DEEP_PIT_M, wider, closed)
+    if water is not None:
+        closed = np.where(water >= WATER_SHARE, work, closed)
+    closed = np.where(outlet, ground, closed)
+    return closed, int((((closed - work) > 1e-6) & ~outlet).sum())
+
+
+# The survey correction. Tested by predicting each surveyed ward from all the others
+# (75 wards, 4,513 manholes): no correction leaves 4.55 m RMS error, one city-wide
+# offset 2.05 m, a background rising with building cover plus the local readings
+# 1.77 m. What remains is the 1.5 m scatter inside a single ward.
+CORRECTION_SIGMA_M = 800.0          # how far one manhole's reading reaches
+CORRECTION_PRIOR_POINTS = 3.0       # readings needed nearby to outweigh the background
+# Building cover is averaged over this radius for the background...
+COVER_RADIUS_M = 75.0
+# The corrected ground never goes below the lowest ground within this radius.
+FLOOR_RADIUS_M = 300.0
+
+
+def _survey_readings(raw: np.ndarray, north: float, west: float, step: float,
+                     shape: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """DEM - surveyed road edge at every manhole placed exactly on its sheet:
+    rows, columns and values, with each sheet's misreads dropped."""
+    if not WARD_POINTS_PATH.exists():
+        return np.array([], int), np.array([], int), np.array([])
+    rows, cols, values = [], [], []
+    for sheet in json.loads(WARD_POINTS_PATH.read_text(encoding="utf-8"))["sheets"]:
+        if (sheet.get("georeference") or {}).get("from") != ["grid lines"]:
+            continue
+        pts = [p for p in sheet["points"] if p.get("road_edge_m") is not None and "lat" in p
+               and p.get("position_from") == "manhole symbol"]
+        if len(pts) < 5:
+            continue
+        r = np.floor((north - np.array([p["lat"] for p in pts])) / step).astype(int)
+        c = np.floor((np.array([p["lon"] for p in pts]) - west) / step).astype(int)
+        inside = (r >= 0) & (r < shape[0]) & (c >= 0) & (c < shape[1])
+        r, c = r[inside], c[inside]
+        diff = raw[r, c] - np.array([p["road_edge_m"] for p, ok in zip(pts, inside) if ok])
+        good = np.isfinite(diff)
+        if good.sum() < 5:
+            continue
+        med = np.median(diff[good])
+        spread = 1.4826 * np.median(np.abs(diff[good] - med)) or 0.5
+        good &= np.abs(diff - med) <= 3 * spread
+        rows.extend(r[good]); cols.extend(c[good]); values.extend(diff[good])
+    return np.array(rows, int), np.array(cols, int), np.array(values)
+
+
+def survey_correction(raw: np.ndarray, north: float, west: float, step: float,
+                      shape: tuple) -> np.ndarray:
+    """How much to lower the DEM at every cell to meet the surveyed road levels, m.
+
+    The GCC / SECON-JBA ward sheets (Ward/*.pdf, read by digitise_wards.py) give the
+    road-edge level above MSL beside every manhole, on the same datum as the DEM (their
+    ground-level control points agree with it to 0.3 m). Against them GEDTM30 stands a
+    median 4 m high in the built-up wards - a 30 m bare-earth model keeps part of the
+    buildings and trees - and higher the denser the building.
+
+    The gap is fitted as a + b * cover, with cover the OSM building share around the
+    manhole: b, about 3 m from open to fully built, is the building and tree clutter a
+    30 m bare-earth model keeps, and it is taken off. The constant a, about 2.9 m, is
+    not: surveyed streets with no mapped building near them still show it, while
+    Chennai Egmore (8 m), Mambalam (13 m) and Guindy (12 m) stations, rail level from
+    Indian Railways, stand at or above the raw DEM, and Marina beach is only 2 m above
+    the sea on it. A uniform 2.9 m that open ground, the beach and the stations do not
+    share is more likely the sheets' levelling datum than the DEM, and a constant does
+    not change which way water runs; it is reported, not applied, until GCC's benchmark
+    records settle it.
+
+    Near the manholes their own departures from the fit are added, spread with
+    CORRECTION_SIGMA_M and weighted against CORRECTION_PRIOR_POINTS readings' worth of
+    nothing, so surveyed areas get their own shape and there is no step at the survey's
+    edge.
+    """
+    zero = np.zeros(shape)
+    rows, cols, values = _survey_readings(raw, north, west, step, shape)
+    buildings = _grid_layer(BUILDINGS_PATH, north=north, west=west, step=step, shape=shape)
+    if values.size < 50:
+        return zero
+    cell_m = step * terrain.M_PER_DEG
+    if buildings is None:
+        background = np.zeros(shape)
+        fit = (float(np.median(values)), 0.0)
+    else:
+        size = max(1, int(round(2 * COVER_RADIUS_M / cell_m)) | 1)
+        cover = ndimage.uniform_filter(buildings, size)
+        slope, intercept = np.polyfit(cover[rows, cols], values, 1)
+        background = slope * cover
+        fit = (float(intercept), float(slope))
+    # Only what varies from place to place is corrected: the building clutter, and each
+    # surveyed area's own departure from the fit. The fit's constant is not - see above.
+    departure = values - fit[0] - background[rows, cols]
+    total, count = np.zeros(shape), np.zeros(shape)
+    np.add.at(total, (rows, cols), departure)
+    np.add.at(count, (rows, cols), 1.0)
+    sigma = CORRECTION_SIGMA_M / cell_m
+    spread_total = ndimage.gaussian_filter(total, sigma, mode="constant")
+    spread_count = ndimage.gaussian_filter(count, sigma, mode="constant")
+    one = 1.0 / (2 * math.pi * sigma ** 2)          # one reading's weight at its own cell
+    correction = background + spread_total / (spread_count + CORRECTION_PRIOR_POINTS * one)
+    survey_correction.last = {"readings": int(values.size), "fit_m": [round(v, 2) for v in fit],
+                              "constant_not_applied_m": round(fit[0], 2)}
+    return correction
 
 
 def _channel_lines() -> list[list[list[float]]]:
@@ -278,63 +312,35 @@ def _burn_waterways(ground: np.ndarray, north: float, west: float,
     return int(hit.sum())
 
 
-def _where(model: dict[str, Any], flat: int) -> list[float]:
-    row, col = divmod(int(flat), model["surface"].shape[1])
-    return [round(model["north"] - (row + 0.5) * model["lat_step"], 6),
-            round(model["west"] + (col + 0.5) * model["lon_step"], 6)]
+def depth_grid(model: dict[str, Any], level: np.ndarray) -> np.ndarray:
+    """Standing water depth over the whole grid at one step, metres, above the land.
+
+    `level` is one water level per zone, -inf where the zone is dry.
+    """
+    return np.clip(level[model["basins"]] - model["land"], 0.0, None)
 
 
-def _hollow(model: dict[str, Any], hollow: int, levels: np.ndarray) -> dict[str, Any]:
-    """One hollow: its shape, and how full it is at its fullest."""
-    first, size = model["start"][hollow], model["size"][hollow]
-    ground = model["ground"][first:first + size]
-    spill = model["spill_m"][hollow]
-    peak = float(levels[:, hollow].max())
-    held = float(np.sum(np.clip(peak - ground, 0.0, None)) * model["cell_area_m2"])
-    capacity = float(model["capacity_m3"][hollow])
+def timeline(series_m: np.ndarray, step_minutes: float, wet_m: float,
+             impassable_m: float) -> dict[str, Any]:
+    """When a depth series crosses the thresholds, in minutes from the start.
+
+    Step i is the state at the end of minute (i + 1) x step_minutes. None where the
+    series never gets there.
+    """
+    def first(mask: np.ndarray, after: int = 0) -> int | None:
+        hits = np.flatnonzero(mask[after:])
+        return None if hits.size == 0 else int(hits[0]) + after
+
+    minutes = lambda i: None if i is None else int(round((i + 1) * step_minutes))
+    wet = series_m >= wet_m
+    floods = first(wet)
+    peak = int(series_m.argmax())
+    clears = None if floods is None else first(~wet, peak)
     return {
-        "deepest_point": _where(model, model["cells"][first]),
-        "spill_level_m": round(float(spill), 2),
-        "max_depth_m": round(float(spill - ground[0]), 3),
-        "area_m2": round(float(size * model["cell_area_m2"]), 0),
-        "capacity_m3": round(capacity, 1),
-        "catchment_m2": round(float(model["catchment_m2"][hollow]), 0),
-        "peak_level_m": round(peak, 2),
-        "peak_held_m3": round(held, 1),
-        "peak_flooded_area_m2": round(float(np.sum(ground < peak) * model["cell_area_m2"]), 0),
-        "full_pct": round(100.0 * held / capacity, 1) if capacity > 0 else 100.0,
-        "overflows": held >= capacity * 0.999,
-    }
-
-
-def at(model: dict[str, Any], lat: float, lon: float, levels: np.ndarray, step_minutes: float,
-       wet_m: float = 0.05, impassable_m: float = 0.30) -> dict[str, Any] | None:
-    """Depth at one coordinate through the storm, and where rain falling there goes."""
-    rows, cols = model["surface"].shape
-    row = math.floor((model["north"] - lat) / model["lat_step"])
-    col = math.floor((lon - model["west"]) / model["lon_step"])
-    if not (0 <= row < rows and 0 <= col < cols) or model["outlet"][row, col]:
-        return None
-
-    ground = float(model.get("land", model["surface"])[row, col])
-    here = int(model["labels"][row, col])
-    into = int(model["basins"][row, col])
-    series = np.clip(levels[:, here] - ground, 0.0, None) if here else np.zeros(len(levels))
-    return {
-        "lat": lat, "lon": lon,
-        "ground_m": round(ground, 2),
-        "depth_cm": np.round(series * 100, 1).tolist(),
-        "peak_depth_cm": round(float(series.max()) * 100, 1),
-        **timeline(series, step_minutes, wet_m, impassable_m),
-        # In a hollow the rain stands here; outside one it runs off to the hollow
-        # (or the sea) its catchment belongs to.
-        "in_hollow": bool(here),
-        "hollow": _hollow(model, here, levels) if here else None,
-        "drains_to": None if here or into in (0, model["sea"]) else _hollow(model, into, levels),
-        "drains_to_sea_or_edge": into == model["sea"],
-        # The named channel and river basin this place belongs to, so the answer reads
-        # "Cooum basin, by the Otteri Nullah" and not just as a dip in the terrain.
-        "channel": channels.nearest(lat, lon),
+        "floods_at_min": minutes(floods),
+        "impassable_at_min": minutes(first(series_m >= impassable_m)),
+        "peak_at_min": minutes(peak) if floods is not None else None,
+        "clears_at_min": minutes(clears),
     }
 
 
@@ -348,24 +354,27 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
     edge lies between a wet vertex and a dry one, and 20 m vertex spacing is finer than
     a 30 m DEM cell.
 
-    Each vertex carries its ground level and the hollow it sits in, and the second
-    value returned is the water level of each of those hollows at every step. Depth at
-    a vertex at a step is level - ground, so a map can redraw any minute without
-    another request, and the per-step series stays per hollow rather than per vertex.
+    Each vertex carries its ground level and the zone it sits in, and the second value
+    returned is the water level of each of those zones at every step. Depth at a vertex
+    at a step is level - ground, so a map can redraw any minute without another request.
     """
     streets, coords, street_of, cell, step_m = _street_cells(model)
     on_grid = cell >= 0
     at_cell = np.maximum(cell, 0)
     land = np.where(on_grid, model["land"].ravel()[at_cell], np.nan)
-    hollow_of = np.where(on_grid, model["labels"].ravel()[at_cell], 0)
+    zone_of = np.where(on_grid, model["basins"].ravel()[at_cell], model["sea"])
 
-    # Depth through time only where a vertex sits in a hollow; everywhere else it is 0.
-    in_hollow = np.flatnonzero(hollow_of > 0)
-    series = np.clip(levels[:, hollow_of[in_hollow]] - land[in_hollow], 0.0, None)
+    # Depth through time where a vertex sits on land; the sea zone is always dry.
+    # A street point in a mapped lake or tank reads the water surface, not a road.
+    in_water = np.zeros(len(coords), dtype=bool)
+    if model.get("water") is not None:
+        in_water = np.where(on_grid, model["water"].ravel()[at_cell] >= WATER_SHARE, False)
+    on_land = np.flatnonzero((zone_of != model["sea"]) & ~in_water)
+    series = np.clip(levels[:, zone_of[on_land]] - land[on_land], 0.0, None)
     column = np.full(len(coords), -1)
-    column[in_hollow] = np.arange(in_hollow.size)
+    column[on_land] = np.arange(on_land.size)
     peak = np.zeros(len(coords))
-    peak[in_hollow] = series.max(axis=0) if in_hollow.size else 0.0
+    peak[on_land] = series.max(axis=0) if on_land.size else 0.0
 
     wet = peak >= min_depth_m
     # A run starts where a wet vertex follows a dry one or begins a street, and ends
@@ -375,11 +384,10 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
     firsts = np.flatnonzero(wet & (new_street | ~np.r_[False, wet[:-1]]))
     lasts = np.flatnonzero(wet & (last_of_street | ~np.r_[wet[1:], False]))
 
-    # Rounded once for the whole city, then sliced: rounding per vertex per stretch
-    # was most of the time this took.
+    # Rounded once for the whole city, then sliced.
     peak_cm = np.round(peak * 100, 1).tolist()
     ground_m = [None if g != g else g for g in np.round(land, 3).tolist()]
-    hollows = hollow_of.tolist()
+    zones = np.where(zone_of == model["sea"], 0, zone_of).tolist()
     xy = np.round(coords, 5).tolist()
     step_total = np.r_[0.0, np.cumsum(step_m)]
     used: set[int] = set()
@@ -397,7 +405,7 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
         deepest = first + int(np.argmax(peak[first:last + 1]))
         # The deepest water anywhere on the stretch at each step.
         worst = series[:, column[first:last + 1]].max(axis=1)
-        used.update(h for h in hollows[lo:hi] if h)
+        used.update(z for z in zones[lo:hi] if z)
         features.append({
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": xy[lo:hi]},
@@ -413,11 +421,13 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
                 "series_cm": np.round(worst * 100, 1).tolist(),
                 "depth_cm": peak_cm[lo:hi],
                 "ground_m": ground_m[lo:hi],
-                "hollow": hollows[lo:hi],
+                "storage": zones[lo:hi],
             },
         })
     features.sort(key=lambda f: f["properties"]["max_depth_cm"], reverse=True)
-    water = {str(h): np.round(levels[:, h], 3).tolist() for h in sorted(used)}
+    # Dry steps are sent as null: JSON has no -inf.
+    water = {str(z): [None if not math.isfinite(v) else round(v, 3) for v in levels[:, z].tolist()]
+             for z in sorted(used)}
     return features, water
 
 
@@ -447,86 +457,47 @@ def _street_cells(model: dict[str, Any]) -> tuple:
 
 
 if __name__ == "__main__":
-    # A 5 x 5 bowl, 9 floor cells at 10 m, rim at 11 m, 100 m² cells, the outer ring
-    # the outlet. Floor holds 900 m³ to the rim.
-    bowl = np.full((7, 7), 12.0)
-    bowl[1:6, 1:6] = 11.0
-    bowl[2:5, 2:5] = 10.0
-    edge = np.zeros_like(bowl, dtype=bool)
-    edge[[0, -1], :] = edge[:, [0, -1]] = True
-    bowl[edge] = 0.0                                 # the sea, below everything
-    m = prepare(bowl, edge, 100.0)
-    assert m["labels"][3, 3] > 0 and m["labels"][1, 1] == 0
-    h = int(m["labels"][3, 3])
-    assert abs(m["spill_m"][h] - 11.0) < 1e-9 and abs(m["capacity_m3"][h] - 900.0) < 1e-9
-    # The floor and the slope inside the rim drain into the bowl; rim cells sit on the
-    # divide, so the watershed may give them either way.
-    catch = m["catchment_m2"][h]
-    assert 900.0 <= catch <= 2500.0, catch
+    # Two dips either side of a low ridge, inside a rim, the sea around the edge: two
+    # zones, not one, so each fills on its own until water tops the ridge.
+    ground = np.full((9, 15), 11.0)
+    ground[2:7, 2:7] = 10.0
+    ground[2:7, 8:13] = 9.0
+    ground[2:7, 7] = 10.5
+    ground[[0, -1], :] = ground[:, [0, -1]] = -1.0
+    m = prepare(ground, ground < 0, 100.0)
+    west, east = int(m["basins"][4, 4]), int(m["basins"][4, 10])
+    assert west != east and m["sea"] not in (west, east), m["basins"]
+    assert m["basins"][0, 0] == m["sea"]
+    # A 1 cm dip is noise and seeds nothing.
+    flat = np.full((5, 5), 5.0)
+    flat[2, 2] = 4.99
+    flat[[0, -1], :] = flat[:, [0, -1]] = 0.0
+    assert prepare(flat, flat == 0.0, 100.0)["sea"] == 1
 
-    vol = np.zeros(m["sea"] + 1)
-    for poured, depth in ((90.0, 0.1), (450.0, 0.5), (900.0, 1.0), (5000.0, 1.0)):
-        vol[h] = poured
-        assert abs(water_levels(m, vol)[h] - (10.0 + depth)) < 1e-9, (poured, water_levels(m, vol)[h])
-    # Matches terrain.fill_depth on the same bowl: one fill rule, two callers.
-    vol[h] = 90.0
-    assert abs(water_levels(m, vol)[h] - 10.0 - terrain.fill_depth(bowl[1:6, 1:6], 100.0, 90.0)["max_depth_m"]) < 1e-9
+    # Pit filling: a one-cell pit 2 m deep is noise and goes; a 25-cell hollow stays; the
+    # same pit under a mapped water body stays.
+    field = np.full((12, 12), 10.0)
+    field[2, 2] = 8.0
+    field[5:10, 5:10] = 9.0
+    edge12 = np.zeros_like(field, dtype=bool)
+    edge12[[0, -1], :] = edge12[:, [0, -1]] = True
+    filled, n = _fill_pits(field.copy(), edge12, None)
+    assert filled[2, 2] == 10.0 and filled[7, 7] == 9.0 and n == 1, (filled[2, 2], filled[7, 7], n)
+    pond = np.zeros_like(field)
+    pond[2, 2] = 1.0
+    assert _fill_pits(field.copy(), edge12, pond)[0][2, 2] == 8.0
+    # The same 25-cell hollow 2 m deep is too deep for its size: filled.
+    deep = field.copy()
+    deep[5:10, 5:10] = 8.0
+    assert _fill_pits(deep, edge12, None)[0][7, 7] == 10.0
 
-    # Rain sized to put 90 m³ in the bowl over three 5 minute steps, then none: the
-    # water builds to 10 cm, and with no drains it stays.
-    per_step = 90.0 / (0.9 * catch) * 1000.0 / 3
-    held = simulate(m, [per_step] * 3 + [0.0] * 3, 0.9, 0.0, 5.0)
-    floor = held[:, h] - 10.0
-    assert np.all(np.diff(floor[:3]) > 0) and abs(floor[2] - 0.1) < 1e-9 and abs(floor[-1] - 0.1) < 1e-9
-    # With drains, the same storm peaks lower and drains away once the rain stops.
-    drain = per_step * 0.9 * 12 / 2                  # half the runoff rate, in mm/h
-    fed = simulate(m, [per_step] * 3 + [0.0] * 3, 0.9, drain, 5.0)[:, h] - 10.0
-    assert abs(fed[2] - 0.05) < 1e-9 and fed[-1] < 1e-9, fed
-    # A slow catchment (3 steps to cross) fills later but, with no drains, to the same
-    # level in the end: the lag moves water in time, it does not lose any.
-    FLOW_SPEED_M_S, fast = math.sqrt(catch) / (2.5 * 300.0), FLOW_SPEED_M_S
-    slow = simulate(m, [per_step] * 3 + [0.0] * 3, 0.9, 0.0, 5.0)[:, h] - 10.0
-    FLOW_SPEED_M_S = fast
-    assert slow[0] < floor[0] and slow[2] < floor[2] and abs(slow[-1] - floor[-1]) < 1e-9, (slow, floor)
+    m.update({"land": ground})
+    level = np.full(m["sea"] + 1, -np.inf)
+    level[west] = 10.1
+    depth = depth_grid(m, level)
+    assert abs(depth[4, 4] - 0.1) < 1e-9 and depth[4, 10] == 0.0 and depth[0, 0] == 0.0
+
     t = timeline(np.r_[0.0, 0.06, 0.4, 0.2, 0.01, 0.0], 5.0, 0.05, 0.30)
     assert t == {"floods_at_min": 10, "impassable_at_min": 15, "peak_at_min": 15, "clears_at_min": 25}, t
     assert timeline(np.zeros(4), 5.0, 0.05, 0.3)["floods_at_min"] is None
-
-    m.update({"north": 7.0, "west": 0.0, "lat_step": 1.0, "lon_step": 1.0, "outlet": edge})
-    assert abs(depth_grid(m, held[2])[3, 3] - 0.1) < 1e-9 and depth_grid(m, held[2])[1, 3] == 0.0
-    rim = at(m, 5.5, 3.5, held, 5.0)                 # row 1, col 3: on the rim
-    assert rim and not rim["in_hollow"] and rim["peak_depth_cm"] == 0.0, rim
-    centre = at(m, 3.5, 3.5, held, 5.0)
-    assert abs(centre["peak_depth_cm"] - 10.0) < 1e-6 and centre["floods_at_min"] == 10, centre
-
-    # Against the real DEM, if there is one.
-    import time
-    _model = None
-    began = time.perf_counter()
-    city = load(12.85, 13.25, 80.10, 80.35)
-    if city is not None:
-        built = time.perf_counter() - began
-        hollows = int((city["size"][1:city["sea"]] > 0).sum())
-        # 36 five-minute steps: an hour at 60 mm/h, then two dry hours, drains 20 mm/h.
-        rain = [5.0] * 12 + [0.0] * 24
-        began = time.perf_counter()
-        levels = simulate(city, rain, 0.75, 20.0, 5.0)
-        ran = time.perf_counter() - began
-        began = time.perf_counter()
-        streets, water = flooded_streets(city, levels, 5.0)
-        drawn = time.perf_counter() - began
-        assert streets and all(f["properties"]["max_depth_cm"] >= 5.0 for f in streets)
-        # Every stretch floods while it rains or after, never before the first step.
-        assert all(f["properties"]["floods_at_min"] >= 5 for f in streets)
-        # The client's depth - level minus ground - reproduces the server's peak.
-        f = streets[len(streets) // 2]["properties"]
-        client = max(max((water[str(h)][s] - g) * 100 for s in range(len(rain)))
-                     for h, g in zip(f["hollow"], f["ground_m"]) if h)
-        assert abs(client - f["max_depth_cm"]) < 0.2, (client, f["max_depth_cm"])
-        soon = sorted(streets, key=lambda f: f["properties"]["floods_at_min"])[0]["properties"]
-        print(f"{hollows} hollows, built in {built:.1f} s; 36 steps simulated in {ran:.2f} s, "
-              f"{len(streets)} stretches in {drawn:.1f} s")
-        print(f"first under: {soon['name'] or 'unnamed'} at +{soon['floods_at_min']} min; "
-              f"clearing by +{max(f['properties']['clears_at_min'] or 999 for f in streets)} min at the latest "
-              f"(999 = still wet at 3 h)")
     print("rain_ponding self-check passed")

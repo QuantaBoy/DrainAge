@@ -6,3 +6,12 @@ __pycache__/
 app/data/*
 # The ward index extracted from the base maps is small and the app reads it.
 !app/data/ward_sheets.json
+# Read from the ward sheets by digitise_wards.py (hours of OCR to rebuild), and the
+# OSM building and water-body grids from fetch_buildings.py: all read by the model.
+!app/data/ward_points.json
+!app/data/building_fraction.npz
+!app/data/water_bodies.npz
+
+# OCR cache from digitise_wards.py
+.ward_ocr/
+.osm_buildings/

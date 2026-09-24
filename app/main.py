@@ -42,8 +42,8 @@ async def warm_caches() -> None:
 
     from app.services import routing, street_flood
 
-    # warm_ponding reads both of the others, so it runs after them in one job.
-    # Routing costs roads by the rain model's water, so it warms after that model.
+    # warm_ponding couples the drains onto the terrain, so it runs after both load.
+    # Routing costs roads by the flood model's water, so it warms after that model.
     for job in (drains._load_csv,
                 lambda: (street_flood._load(), flood.warm_ponding(), routing.warm(flood._ponding_model()))):
         asyncio.get_running_loop().run_in_executor(None, job)

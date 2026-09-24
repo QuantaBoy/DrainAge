@@ -335,7 +335,8 @@ function drainTooltip(p) {
     const slope = p.SLOPE ? `1 in ${Math.round(1 / p.SLOPE)}` : "—";
 
     const rows = [
-        ["Section (W × D)", `${esc(size)} · ${esc(p.DRAIN_DETL || p.DRAIN_TYPE || "")}`],
+        ["Section (W × D)", `${esc(size)} · ${esc(p.DRAIN_DETL || p.DRAIN_TYPE || "")}` +
+            (p.SIZE_UNVERIFIED ? " · <b>unverified</b>" : "")],
         ["Length", `${fmt(length, 1)} m`],
         ["Bed slope", `${slope} · inverts ${fmt(p.INVERT_SP, 2)} → ${fmt(p.INVERT_EP, 2)} m`],
         ["Material / condition", `${esc(p.SWD_MAT || p.TYP_MAT || "—")} · ${esc(p.STATUS || "—")}`],
@@ -371,6 +372,12 @@ function drainPopup(feature) {
         ["Drain Type", p.DRAIN_TYPE],
         ["Detail", p.DRAIN_DETL],
         ["Size", p.DRAIN_SIZE],
+        ["Drawn on", p.SOURCE],
+        ["Manholes", p.MANHOLES],
+        ["Size from", p.SIZE_SOURCE],
+        ["Inverts from", p.INVERT_SOURCE],
+        ["Reverse gradient", p.REVERSE_SURVEYED ? "yes, as surveyed (drawn pink on the sheet)" : ""],
+        ["Flow direction from", p.FLOW_FROM],
         ["Depth (m)", p.DRAIN_DEP],
         ["Width (m)", p.DRAIN_WID],
         ["Length (m)", typeof p.DRAIN_LEN === "number" ? p.DRAIN_LEN.toFixed(1) : p.DRAIN_LEN],

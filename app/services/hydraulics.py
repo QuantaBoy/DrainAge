@@ -67,6 +67,8 @@ RUNOFF_COEFF = 0.75
 # metres apart, never identical; 15 m is the width of the road they meet in.
 SNAP_M = 15.0
 SNAP_DEG = SNAP_M / 111_000       # degrees of latitude; longitude at 13°N is within 3%
+# Two ward-sheet drains share a junction only where their points coincide.
+EXACT_SNAP_DEG = 0.5 / 111_000
 
 # How full a drain is before it is called stressed, then overloaded.
 LOAD_BANDS = ((0.5, "clear"), (0.85, "filling"), (1.0, "at capacity"))
@@ -167,8 +169,8 @@ def rational_inflow(catchment_m2: float, rain_mm_h: float, coeff: float = RUNOFF
     return coeff * rain_mm_h * catchment_m2 / 3.6e6
 
 
-def snap_nodes(polylines: list[list[list[float]]],
-               tolerance_deg: float = SNAP_DEG) -> tuple[list[list[int]], list[list[float]]]:
+def snap_nodes(polylines: list[list[list[float]]], tolerance_deg: float = SNAP_DEG,
+               exact: list[Any] | None = None) -> tuple[list[list[int]], list[list[float]]]:
     """Give every vertex of every drain a shared junction id.
 
     A vertex joins the nearest existing node within the tolerance, so two drains that
@@ -179,15 +181,23 @@ def snap_nodes(polylines: list[list[list[float]]],
     Every vertex is indexed, not only the two ends, because a side drain usually
     joins a trunk part-way along it rather than at the trunk's own start or end.
 
+    `exact` gives each line a group whose junctions are already exact - one ward
+    sheet's network, which shares identical junction points - or None. Two lines of
+    the same group join only within EXACT_SNAP_DEG, so the drains either side of one
+    street stay apart; lines of different groups (neighbouring sheets drawing one
+    boundary drain, or a sheet and the survey CSV) join within the full tolerance.
+
     Returns the node id of every vertex, drain by drain, and where each node is: a
     junction is a manhole, and that is where a surcharged drain puts water on the
     street.
     """
+    exact = exact or [None] * len(polylines)
+    node_group: list[Any] = []
     cells: dict[tuple[int, int], list[int]] = defaultdict(list)
     nodes: list[list[float]] = []
     ids: list[list[int]] = []
 
-    for line in polylines:
+    for line, line_exact in zip(polylines, exact):
         line_ids = []
         for lon, lat in line:
             cell = (int(lon // tolerance_deg), int(lat // tolerance_deg))
@@ -197,11 +207,14 @@ def snap_nodes(polylines: list[list[list[float]]],
                     for candidate in cells[(cell[0] + dx, cell[1] + dy)]:
                         node = nodes[candidate]
                         distance = (node[0] - lon) ** 2 + (node[1] - lat) ** 2
-                        if distance < best_distance:
+                        same = line_exact is not None and node_group[candidate] == line_exact
+                        reach = EXACT_SNAP_DEG ** 2 if same else best_distance
+                        if distance < min(best_distance, reach):
                             best, best_distance = candidate, distance
             if best is None:
                 best = len(nodes)
                 nodes.append([lon, lat])
+                node_group.append(line_exact)
                 cells[cell].append(best)
             line_ids.append(best)
         ids.append(line_ids)
@@ -225,9 +238,15 @@ def network(edges: list[dict[str, Any]]) -> dict[str, Any]:
     which is where water actually goes. Drains come back in topological order, so
     everything upstream of a drain is settled before it is.
 
-    ponytail: cycles in the surveyed inverts are broken by falling back to invert
-    order for the drains inside them; a full hydraulic solver is the upgrade if the
-    survey ever produces enough of them to matter.
+    Water only runs downhill: drain i hands its water to drain j only when j's outlet
+    is lower than i's, where both are surveyed. The drains either side of one street
+    (LHS and RHS) run within the snapping distance of each other, so each passes
+    through the other's junctions; without this rule each "carried" the other's water,
+    one of the two uphill, and 128 pairs traded water in a loop for ever. A drain with
+    no lower drain to hand to ends there: an outfall.
+
+    What loops remain can only run through drains with no usable inverts. Each is cut
+    at its drain with the lowest known head, so the graph is a true tree of flow.
     """
     # Which drain carries the water away from each junction. A drain cannot carry
     # away the flow arriving at its own outlet, so only its upstream vertices count.
@@ -242,35 +261,57 @@ def network(edges: list[dict[str, Any]]) -> dict[str, Any]:
             if current is None or _lower_outlet(edge, edges[current]):
                 carrier[node] = i
 
-    # Drain i feeds drain j when the water leaving i's outlet is carried on by j.
-    downstream: list[int | None] = [carrier.get(edge["nodes"][-1]) for edge in edges]
-    downstream = [None if j == i else j for i, j in enumerate(downstream)]
+    # Drain i feeds drain j when the water leaving i's outlet is carried on by j, and j
+    # takes it lower.
+    downstream: list[int | None] = []
+    for i, edge in enumerate(edges):
+        j = carrier.get(edge["nodes"][-1])
+        downstream.append(j if j is not None and j != i and _downhill(edge, edges[j]) else None)
 
-    waiting = [0] * len(edges)
+    while True:
+        order = _topological(downstream)
+        if len(order) == len(edges):
+            break
+        # A loop through unsurveyed inverts: walk it and cut it.
+        done = set(order)
+        i = next(k for k in range(len(edges)) if k not in done)
+        seen: dict[int, int] = {}
+        while i not in seen:
+            seen[i] = len(seen)
+            i = downstream[i]
+        loop = [k for k, at in seen.items() if at >= seen[i]]
+        cut = min(loop, key=lambda k: edges[k]["head"] if _known(edges[k]["head"]) else math.inf)
+        downstream[cut] = None
+    return {"carrier": carrier, "downstream": downstream, "order": order}
+
+
+def _known(value: Any) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _downhill(upper: dict[str, Any], lower: dict[str, Any]) -> bool:
+    """Can water leaving `upper` go on down `lower`? Not uphill, where both are surveyed."""
+    if _known(upper["tail"]) and _known(lower["tail"]):
+        return lower["tail"] < upper["tail"]
+    return True
+
+
+def _topological(downstream: list[int | None]) -> list[int]:
+    """Kahn's order: every drain after all the drains that feed it."""
+    waiting = [0] * len(downstream)
     for j in downstream:
         if j is not None:
             waiting[j] += 1
-
     order = [i for i, count in enumerate(waiting) if count == 0]
     settled = 0
     while settled < len(order):
-        i = order[settled]
+        j = downstream[order[settled]]
         settled += 1
-        j = downstream[i]
         if j is not None:
             waiting[j] -= 1
             if waiting[j] == 0:
                 order.append(j)
-
-    # Anything left is in a loop; settle it highest invert first, as before.
-    if len(order) < len(edges):
-        done = set(order)
-        order.extend(sorted(
-            (i for i in range(len(edges)) if i not in done),
-            key=lambda i: edges[i]["head"] if edges[i]["head"] is not None else -math.inf,
-            reverse=True,
-        ))
-    return {"carrier": carrier, "downstream": downstream, "order": order}
+    return order
 
 
 def accumulate(edges: list[dict[str, Any]], graph: dict[str, Any] | None = None) -> list[float]:
@@ -283,65 +324,6 @@ def accumulate(edges: list[dict[str, Any]], graph: dict[str, Any] | None = None)
         if j is not None:
             accumulated[j] += accumulated[i]
     return accumulated
-
-
-def route(edges: list[dict[str, Any]], graph: dict[str, Any], rain_mm_h: list[float],
-          coeff: float, step_seconds: float) -> dict[int, list[float]]:
-    """Rain through the network, step by step: the water standing at each junction.
-
-    Each step, the rain on a drain's own strip arrives at its head junction. Then, in
-    the graph's order, every drain takes in what is waiting at the junctions it
-    carries water on from, up to its capacity, and hands it to its outlet junction,
-    where the drain below takes it in turn. What a drain cannot take stays at those
-    junctions - backflow, standing on the street above the manhole - and goes back in
-    at a later step once the drain has room. Water reaching a junction nothing
-    carries on from has left the network: an outfall, into a canal or river.
-
-    So a junction floods because the drain below it is full, and water already on a
-    street upstream is no longer counted again by every drain downstream of it.
-
-    `edges` carry `nodes`, `local` (catchment, m²) and `capacity` (m³/s, None for a
-    drain the survey did not size, which passes water on rather than inventing a
-    flood). Returns the volume standing at each junction that ever surcharges, m³,
-    one value per step.
-
-    ponytail: water crosses the network within one step, with no travel time along
-    the pipes; a hydrodynamic solver (SWMM-style) would add it. At 15 minute steps
-    and drains a few hundred metres long the difference is minutes.
-    """
-    carrier = graph["carrier"]
-    # The junctions each drain takes water in at: those it is the carrier for.
-    entries = [[n for n in _upstream_nodes(edge) if carrier.get(n) == i]
-               for i, edge in enumerate(edges)]
-    standing: dict[int, float] = defaultdict(float)
-    history: dict[int, list[float]] = {}
-
-    for step, rain in enumerate(rain_mm_h):
-        arriving: dict[int, float] = defaultdict(float)
-        for edge in edges:
-            arriving[edge["nodes"][0]] += rational_inflow(edge["local"], rain, coeff) * step_seconds
-
-        for i in graph["order"]:
-            nodes = entries[i]
-            if not nodes:
-                continue
-            waiting = sum(standing[n] + arriving[n] for n in nodes)
-            if waiting <= 0:
-                continue
-            capacity = edges[i]["capacity"]
-            taken = waiting if capacity is None else min(waiting, capacity * step_seconds)
-            # What it cannot take backs up at each junction in proportion to what was
-            # waiting there.
-            left = (waiting - taken) / waiting
-            for n in nodes:
-                standing[n] = (standing[n] + arriving[n]) * left
-                arriving[n] = 0.0
-            arriving[edges[i]["nodes"][-1]] += taken
-
-        for n, volume in standing.items():
-            if volume > 1e-6:
-                history.setdefault(n, [0.0] * len(rain_mm_h))[step] = volume
-    return history
 
 
 def _lower_outlet(candidate: dict[str, Any], current: dict[str, Any]) -> bool:
@@ -496,34 +478,42 @@ if __name__ == "__main__":
     assert ids[0][1] != ids[1][1]
     # Every node id indexes a real position, which is what the flood model pours at.
     assert len(points) == len({i for line in ids for i in line})
+    # Two sheet drains 8 m apart (either side of a street) stay apart; a CSV drain
+    # ending between them joins one.
+    side = 8 / 111_000
+    lhs, rhs = [[80.2, 13.05], [80.201, 13.05]], [[80.2, 13.05 + side], [80.201, 13.05 + side]]
+    ids, _ = snap_nodes([lhs, rhs, [[80.1995, 13.05 + side / 2], [80.2, 13.05 + side / 2]]], exact=[1, 1, None])
+    assert ids[0][0] != ids[1][0] and ids[2][1] in (ids[0][0], ids[1][0]), ids
+    # The same pair drawn on two different sheets joins: one boundary drain.
+    ids, _ = snap_nodes([lhs, rhs], exact=[1, 2])
+    assert ids[0][0] == ids[1][0], ids
     assert points[ids[0][0]][0] == 80.2
 
-    # Routing: a big drain feeding a small one feeding an outfall, 1 hectare each.
-    # 36 mm/h on 1 ha at C = 1 is 0.1 m³/s, so the head drain delivers 0.1 and the
-    # small one, sized for 0.05, backs the rest up at the junction they share.
     pipe = [
-        {"nodes": [1, 2], "local": 10_000.0, "capacity": 1.0, "head": 14.0, "tail": 13.0},
-        {"nodes": [2, 3], "local": 0.0, "capacity": 0.05, "head": 13.0, "tail": 12.0},
-        {"nodes": [3, 4], "local": 0.0, "capacity": 1.0, "head": 12.0, "tail": 11.0},
+        {"nodes": [1, 2], "local": 10_000.0, "head": 14.0, "tail": 13.0},
+        {"nodes": [2, 3], "local": 0.0, "head": 13.0, "tail": 12.0},
+        {"nodes": [3, 4], "local": 0.0, "head": 12.0, "tail": 11.0},
     ]
     graph = network(pipe)
     assert graph["downstream"] == [1, 2, None] and graph["order"] == [0, 1, 2]
-    wet = route(pipe, graph, [36.0, 36.0, 0.0, 0.0, 0.0], 1.0, 600.0)
-    # Only the junction above the small drain floods: not the head, not the outfall.
-    assert set(wet) == {2}, wet
-    # 0.05 m³/s over 600 s is 30 m³ a step that cannot get in, for both wet steps.
-    assert abs(wet[2][0] - 30.0) < 1e-6 and abs(wet[2][1] - 60.0) < 1e-6, wet
-    # Once the rain stops the small drain takes 30 m³ a step back, so it drains away.
-    assert abs(wet[2][2] - 30.0) < 1e-6 and wet[2][3] == 0.0, wet
-    # A drain the survey never sized passes everything on rather than flooding.
-    unsized = [dict(pipe[0]), {**pipe[1], "capacity": None}, dict(pipe[2])]
-    assert route(unsized, network(unsized), [36.0], 1.0, 600.0) == {}
-    # Accumulation over the same graph still sees the whole catchment.
     assert accumulate(pipe, graph) == [10_000.0, 10_000.0, 10_000.0]
     # A drain whose last two points snapped to its outlet does not carry its own water
     # away: the drain below still takes it.
     stutter = [{**pipe[0], "nodes": [1, 2, 2]}, dict(pipe[1]), dict(pipe[2])]
     assert network(stutter)["downstream"] == [1, 2, None]
+
+    # Thiruvalluvar Street-2, both sides: LHS ends where RHS begins, RHS ends part-way
+    # along LHS. Only the downhill hand-over survives (RHS 15.703 -> LHS 15.655 would
+    # be fine, LHS 15.655 -> RHS 15.703 is uphill), so there is no loop.
+    sides = [
+        {"nodes": [1, 2, 3, 4], "local": 60.0, "head": 15.769, "tail": 15.655},    # LHS
+        {"nodes": [4, 5, 2], "local": 60.0, "head": 15.717, "tail": 15.703},       # RHS
+    ]
+    graph = network(sides)
+    assert graph["downstream"] == [None, 0] and sorted(graph["order"]) == [0, 1], graph
+    # A loop with no surveyed inverts is cut, not left to circulate.
+    blind = [{**edge, "head": None, "tail": None} for edge in sides]
+    assert len(network(blind)["order"]) == 2
 
     assert load_band(0.2) == "clear" and load_band(0.9) == "at capacity"
     assert load_band(1.4) == "overflowing"

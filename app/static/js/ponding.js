@@ -1,14 +1,16 @@
-// Rain on the streets, minute by minute: which street goes under, when, how deep.
+// Flood nowcast, minute by minute: which street goes under, when, how deep, and which
+// manholes the drains surcharge out of.
 //
-// The server runs the next 3 hours of rain through every hollow in the DEM in 5 minute
-// steps (app/services/rain_ponding.py) and sends, for each street stretch, the ground
-// under each 20 m point, the hollow it sits in, and the water level of every hollow at
-// every step. Depth at a point at a step is level - ground, so the slider redraws any
-// minute without asking the server again. Uses DEPTH_BANDS and depthColor from
+// The server runs the next 3 hours of rain through the terrain and the drain network
+// together (app/services/coupled.py) and sends, for each street stretch, the ground
+// under each 20 m point, the storage zone it sits in, and the water level of every
+// zone at every 5 minute step; and for each surcharging manhole, its outflow and the
+// depth over it. Depth at a point at a step is level - ground, so the slider redraws
+// any minute without asking the server again. Uses DEPTH_BANDS and depthColor from
 // flood.js, el/opt/esc from drains.js.
 
 const pondingLayer = L.layerGroup();
-layerControl.addOverlay(pondingLayer, "Rain on streets, 5-min forecast (cm)");
+layerControl.addOverlay(pondingLayer, "Flood nowcast: streets + drains, 0–3 h (cm)");
 const pondingRenderer = L.canvas({ padding: 0.5 });
 
 const pondingState = { request: 0, data: null, step: 0, filter: "", shown: 300, sort: "soonest", timer: null };
@@ -37,9 +39,10 @@ function whenLabel(minute) {
 // Depth at each point of a stretch at one step, cm.
 function depthsAt(props, step) {
     const water = pondingState.data.water_level_m;
-    return props.hollow.map((h, i) => {
-        if (!h || props.ground_m[i] == null) return 0;
-        return Math.max(0, (water[h][step] - props.ground_m[i]) * 100);
+    return props.storage.map((z, i) => {
+        const level = z ? water[z]?.[step] : null;
+        if (level == null || props.ground_m[i] == null) return 0;
+        return Math.max(0, (level - props.ground_m[i]) * 100);
     });
 }
 
@@ -48,7 +51,7 @@ function depthsAt(props, step) {
 const pondingUi = (() => {
     const container = el("div", "flood-panel");
     const header = el("div", "drain-header");
-    header.append(el("span", "drain-icon", "🌧️"), el("span", "drain-title", "Rain on streets · 5-min forecast"));
+    header.append(el("span", "drain-icon", "🌧️"), el("span", "drain-title", "Flood nowcast · streets + drains"));
     const note = el("div", "flood-note", "Turn on the layer to run the forecast.");
 
     const rainLabel = el("label", "drain-label", "Rainfall");
@@ -60,7 +63,7 @@ const pondingUi = (() => {
 
     // How much of the surveyed drain capacity is working. The GCC survey gives each
     // drain's conveyance; what it does not record is how silted or blocked it is, and
-    // that is what this asks.
+    // that is what this asks. Every drain in the network is scaled by it.
     const drainLabel = el("label", "drain-label", "Drains working at");
     const drain = document.createElement("select");
     for (const [value, label] of [
@@ -97,10 +100,11 @@ const pondingUi = (() => {
         legend.append(item);
     }
     const caveat = el("div", "flood-note",
-        "Drainage is each hollow's surveyed outfall conveyance, which is a best case: " +
-        "the survey does not record silting or gully inlets. 30 m DEM, rain taken as even " +
-        "over the city; the order and timing streets flood in are sound, depths over ~1 m " +
-        "are usually DEM error.");
+        "Rain runs over a 30 m DEM, into the drains through their gratings (HEC-22, half " +
+        "clogged), along the surveyed network up to each drain's capacity, and back out of " +
+        "the manholes where a drain is full. Rain is taken as even over the city, and the " +
+        "model is not yet checked against a recorded flood: the order and timing streets " +
+        "flood in are the trustworthy output, and depths over ~1 m are usually DEM error.");
 
     container.append(header, mode, note, controls, clock, chart, slider, play, stats, upcoming, legend, caveat);
     const dock = document.getElementById("ponding-panel");
@@ -270,6 +274,26 @@ streetTable.download.addEventListener("click", () => {
 
 // ─── Map ───────────────────────────────────────────────────────────────────────
 
+// A surcharging manhole at one step.
+function manholeTooltip(p, step) {
+    const flow = p.surcharge_l_s[step];
+    const rows = [
+        ["Coming out now", `<b>${flow.toFixed(0)} L/s</b>`],
+        ["Water over it", `${p.depth_cm[step].toFixed(0)} cm`],
+        ["Peak outflow", `${p.peak_l_s.toFixed(0)} L/s`],
+        ["Total over 3 h", `${p.surcharge_m3.toLocaleString()} m³`],
+        ["Starts", whenLabel(p.starts_at_min)],
+        ["Full drain", esc(p.street || "unnamed")],
+        ["Ward / zone", `${esc(p.ward || "—")} · ${esc(p.zone || "—")}`],
+    ];
+    return `<div class="drain-tip">
+        <div class="drain-tip-head"><span>Manhole surcharging</span>
+            <span class="drain-tip-band" style="background:${depthColor(p.depth_cm[step])}">${flow.toFixed(0)} L/s</span></div>
+        <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>
+        <div class="drain-tip-foot">The drain below it is full: water comes back up here</div>
+    </div>`;
+}
+
 // Distance along a stretch at each vertex, metres, for the profile's x axis.
 function chainage(coords) {
     const out = [0];
@@ -389,6 +413,24 @@ function drawPonding() {
             .addTo(pondingLayer);
     }
 
+    // Manholes on top of the streets: where the drains put water back on the road,
+    // sized by how fast it comes out.
+    let surcharging = 0;
+    for (const feature of data.manholes.features) {
+        const p = feature.properties;
+        const flow = p.surcharge_l_s[step];
+        if (!(flow > 0)) continue;
+        surcharging++;
+        const [lon, lat] = feature.geometry.coordinates;
+        L.circleMarker([lat, lon], {
+            renderer: pondingRenderer,
+            radius: Math.min(10, 3 + Math.sqrt(flow) / 3),
+            color: "#fff", weight: 1.5, fillColor: "#0d47a1", fillOpacity: 0.9,
+        }).bindTooltip(() => manholeTooltip(p, pondingState.step),
+            { sticky: true, className: "drain-tooltip", direction: "auto" })
+            .addTo(pondingLayer);
+    }
+
     const minute = (step + 1) * data.rain.step_minutes;
     const clock = clockAt(step);
     pondingUi.clock.textContent = `+${minute} min${clock ? ` · ${clock}` : ""}`;
@@ -397,15 +439,29 @@ function drawPonding() {
         el("div", "drain-stat-line", `${counts.wet.toLocaleString()} named streets under water now · ` +
             `${counts.impassable.toLocaleString()} impassable`),
         el("div", "drain-stat-line", `Rain now ${data.rain.rain_mm_h[step]} mm/h · ${data.rain.total_mm} mm over 3 h`),
+        el("div", "drain-stat-line", `${surcharging.toLocaleString()} manholes surcharging now · ` +
+            `${data.surcharging_manholes.toLocaleString()} over the 3 h`),
         el("div", "drain-stat-line", `Drains at ${Math.round(data.drain_condition * 100)}% of the GCC survey · ` +
-            `${data.drainage.hollows_from_the_survey.toLocaleString()} hollows drained by surveyed drains, ` +
-            `the rest at the surveyed rate (${data.drainage.surveyed_rate_mm_h} mm/h)`),
+            `${data.model.gratings.toLocaleString()} gratings, ${data.model.open_drain_edge_km} km of open drain edge; ` +
+            `${data.model.zones_without_surveyed_drains.toLocaleString()} of ${data.model.zones.toLocaleString()} ` +
+            `terrain zones (${data.model.unsurveyed_km2} km²) have no surveyed drain and are given drains built for ${data.model.unsurveyed_design_mm_h} mm/h, an assumption`),
+        el("div", "drain-stat-line", massBalance(data.balance_m3)),
         el("div", "drain-stat-line", `By 3 h: ${data.named_streets.toLocaleString()} streets go under, ` +
             `${data.impassable_streets.toLocaleString()} impassable, ${data.wet_km} km of road`),
     );
     drawUpcoming();
     drawRainChart();
     drawTable();
+}
+
+// Where the runoff went, and how well the books close: the model's own audit.
+function massBalance(b) {
+    const share = (v) => `${Math.round((100 * v) / Math.max(b.runoff, 1))}%`;
+    return `Runoff ${(b.runoff / 1e6).toFixed(2)} Mm³: ${share(b.on_surface)} on the ground ` +
+        `(${share(b.blind_ends_to_ground || 0)} of it out of drains with no mapped channel at their end), ` +
+        `${share(b.outfall)} out through outfalls to canals and rivers, ${share(b.assumed_drainage)} by assumed drains, ` +
+        `${share(b.in_drains)} in the pipes, ${share(b.to_sea)} over land to the sea · ` +
+        `balance error ${Math.abs(b.error_m3).toExponential(1)} m³`;
 }
 
 // The headline: named streets that go under in the next 30 minutes, soonest first.
@@ -434,11 +490,14 @@ function drawUpcoming() {
 async function loadPonding() {
     const id = ++pondingState.request;
     stopPlaying();
-    pondingUi.note.textContent = "Running the rain through the DEM, 36 steps…";
+    pondingUi.note.textContent = "Running the storm through the terrain and the drains, 3 h in 1-minute steps…";
     const params = new URLSearchParams();
-    const centre = map.getCenter();
-    params.set("lat", centre.lat.toFixed(4));
-    params.set("lon", centre.lng.toFixed(4));
+    // The rain over the drained city: the selected place if it is in Chennai, else the
+    // city centre - never wherever the map happens to be panned to.
+    const point = marker && CHENNAI_BOUNDS.contains(marker.getLatLng())
+        ? marker.getLatLng() : L.latLng(CHENNAI_CENTRE);
+    params.set("lat", point.lat.toFixed(4));
+    params.set("lon", point.lng.toFixed(4));
     if (pondingUi.rain.value) params.set("rain_mm_h", pondingUi.rain.value);
     params.set("drain_condition", pondingUi.drain.value);
     if (drainUi.zoneSelect.value) params.set("zone", drainUi.zoneSelect.value);
@@ -491,9 +550,9 @@ function publishPondingRain() {
     const clock = clockAt(step);
     const when = `+${(step + 1) * data.rain.step_minutes} min${clock ? ` (${clock})` : ""}`;
     if (data.rain.mode === "scenario") {
-        publishRain(data.rain.rain_mm_h[step], `Rain on streets scenario, ${when} (hypothetical)`, "scenario");
+        publishRain(data.rain.rain_mm_h[step], `Flood nowcast scenario, ${when} (hypothetical)`, "scenario");
     } else {
-        publishRain(data.rain.rain_mm_h[step], `Rain on streets forecast, ${when} (Open-Meteo)`, "forecast");
+        publishRain(data.rain.rain_mm_h[step], `Flood nowcast forecast, ${when} (Open-Meteo)`, "forecast");
     }
 }
 
@@ -540,7 +599,7 @@ map.on("overlayremove", (event) => {
     stopPlaying();
     scenarioBanner.remove();
     // The drains were running on this panel's rain; with it gone, back to live.
-    if (window.rainSource.label.startsWith("Rain on streets")) backToLiveRain();
+    if (window.rainSource.label.startsWith("Flood nowcast")) backToLiveRain();
     pondingUi.dock?.setAttribute("hidden", "");
     streetTable.dock?.setAttribute("hidden", "");
     pondingState.request++;
