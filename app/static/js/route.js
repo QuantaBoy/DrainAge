@@ -1,7 +1,7 @@
 // Flood-safe route: a start and a destination, typed or picked on the map, and the
 // route round the water the forecast puts on the streets.
 //
-// The server (app/routes/navigation.py) costs every road by its forecast depth for
+// The server (app/services/navigation.py) costs every road by its forecast depth for
 // the trip and runs Dijkstra and A* on the street graph. This draws the safe route,
 // the plain shortest route beside it, and the flooded stretches the shortest one
 // would have driven through. The rainfall and drain settings are the flood nowcast

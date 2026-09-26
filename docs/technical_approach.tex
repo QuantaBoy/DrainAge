@@ -1,0 +1,995 @@
+% DRAIN OUT - Technical Approach
+% Compile on Overleaf with pdfLaTeX (default settings). No external files needed.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[table]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,shapes.geometric}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent,citecolor=accent]{hyperref}
+
+% ---------- Look ----------
+\definecolor{accent}{HTML}{0B5CAD}
+\definecolor{built}{HTML}{1E7B34}
+\definecolor{planned}{HTML}{B35C00}
+\definecolor{soft}{HTML}{EEF3FA}
+\definecolor{ink}{HTML}{1B2330}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{ink}}{\thesubsubsection}{0.6em}{}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{accent}\textbf{DRAIN OUT} \textperiodcentered{} Technical Approach}
+\rhead{\small Smart India Hackathon 2026}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlist{itemsep=2pt,topsep=4pt}
+\renewcommand{\arraystretch}{1.25}
+
+% Status badges: what runs today, and what is designed but not yet in the code.
+\newcommand{\built}{\textcolor{built}{\small\textbf{[BUILT]}}}
+\newcommand{\planned}{\textcolor{planned}{\small\textbf{[DESIGNED]}}}
+
+\newcommand{\keybox}[2]{%
+  \begin{center}\fcolorbox{accent}{soft}{\parbox{0.94\linewidth}{\vspace{4pt}%
+  \textbf{\color{accent}#1}\par\smallskip #2\vspace{4pt}}}\end{center}}
+
+% =====================================================================
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2.5cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par\vspace{0.6cm}
+  {\Huge\bfseries DRAIN OUT\par}
+  \vspace{0.3cm}
+  {\LARGE Technical Approach\par}
+  \vspace{0.4cm}
+  {\large A multi-model, street-level flood forecasting system\\ for Chennai's storm water drainage\par}
+  \vspace{0.6cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par
+  \vspace{1.5cm}
+  \begin{tabular}{@{}ll@{}}
+    \textbf{Event}   & Smart India Hackathon 2026 \\
+    \textbf{Problem} & SIH 26085 \\
+    \textbf{Team}    & \emph{Your Team Name} \\
+  \end{tabular}
+  \vfill
+  \begin{minipage}{0.85\linewidth}\small
+  \textbf{Reading this document.} Every component is tagged \built{} (running in the
+  prototype today, with automated tests) or \planned{} (specified here, data in hand,
+  not yet coded). Numbers quoted for built components are measured on the prototype,
+  not estimated.
+  \end{minipage}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Summary}
+
+DRAIN OUT forecasts, street by street, where Chennai will flood over the next three
+hours, how deep the water will get, when it will arrive and when it will clear, and
+routes traffic around it. It combines two models that answer different questions:
+
+\begin{description}[leftmargin=1.2em,style=nextline]
+  \item[Model A \textendash{} Physics Nowcast Model (``usual occurring drainage prediction'') \built]
+    A coupled drain-and-surface (\emph{dual drainage}) hydraulic model. Live rainfall
+    runs off the terrain into the surveyed storm water drains, which carry what their
+    Manning capacity allows; the excess surcharges out of real manholes and spreads
+    over the streets. It answers: \emph{given the rain coming in the next three hours,
+    which streets go under, when, and how deep?}
+  \item[Model B \textendash{} Historical Pattern Model \planned]
+    A recurrence model built from Chennai's historical flood record: flood extents for
+    5, 10, 25, 50, 100 and 200-year return periods, the city flood hazard zones, the
+    753 flooding points of December 2015 and 192 measured inundation points. It answers:
+    \emph{how rare is this storm, and where has a storm of this rarity flooded before?}
+\end{description}
+
+A fusion layer combines the two into one risk per street, and flags where they
+disagree, which is where the most useful information is (Section~\ref{sec:fusion}).
+
+\keybox{Why two models and not one}{A single model trained or tuned on past years
+carries the bias of those years: as rainfall extremes and the city itself change, its
+errors drift. Model~A has no memory at all \textendash{} it is driven by physics and
+the live rain, so it does not drift with the climate, but it cannot know that a street
+flooded in 2015 for reasons the survey does not capture. Model~B has memory but no
+timing. Each covers the other's blind spot, and Model~B is re-fitted every monsoon on a
+sliding window so its recurrence statistics follow the changing climate instead of
+freezing it (Section~\ref{sec:nonstationary}).}
+
+% =====================================================================
+\section{Design goals}
+
+\begin{enumerate}[label=\textbf{G\arabic*.}]
+  \item \textbf{Street resolution.} Report depth on named streets, not on grid cells or
+        wards alone: a control room acts on ``Velachery Main Road, 35~cm at 16:40''.
+  \item \textbf{Lead time.} A 0\textendash3~h nowcast in 5-minute steps, the window the
+        problem statement asks for.
+  \item \textbf{Traceability.} Every number is surveyed, derived from surveyed values, or
+        a stated assumption with its value on show. No black box.
+  \item \textbf{Conservation.} Water is never created or lost by the numerics; the mass
+        balance is checked on every run.
+  \item \textbf{Honesty about input.} A what-if scenario is never shown as a forecast;
+        assumed values are marked as assumed.
+  \item \textbf{Replaceable inputs.} A radar nowcast, a LiDAR terrain model or a new ward
+        survey drops in without rewriting the model.
+\end{enumerate}
+
+% =====================================================================
+\section{System architecture}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.55cm and 0.6cm,
+  box/.style={draw=accent,fill=soft,rounded corners=3pt,align=center,
+              minimum height=0.95cm,text width=3.0cm,font=\small},
+  model/.style={box,fill=accent!12,text width=3.4cm,minimum height=1.25cm,font=\small\bfseries},
+  plan/.style={model,draw=planned,fill=planned!10},
+  out/.style={box,fill=built!10,draw=built},
+  arr/.style={-{Stealth[length=2.2mm]},thick,color=ink!70}]
+
+  % data layer
+  \node[box] (rain) {Rainfall nowcast\\\footnotesize Open-Meteo, 15 min};
+  \node[box,below=of rain] (dem) {Terrain (DEM)\\\footnotesize GEDTM30, 30 m};
+  \node[box,below=of dem] (drains) {Drain network\\\footnotesize GCC survey + 92 ward maps};
+  \node[box,below=of drains] (osm) {Streets, waterways,\\buildings\footnotesize{} (OSM)};
+  \node[box,below=of osm] (hist) {Historical record\\\footnotesize return periods, 2015};
+
+  % models
+  \node[model,right=1.3cm of dem,yshift=-0.7cm] (A) {Model A\\Physics Nowcast\\\footnotesize\mdseries coupled dual drainage};
+  \node[plan,right=1.3cm of osm,yshift=0.2cm] (B) {Model B\\Historical Pattern\\\footnotesize\mdseries recurrence prior};
+
+  % fusion
+  \node[plan,right=1.2cm of A,yshift=-1.55cm,text width=2.6cm] (F) {Fusion\\\footnotesize\mdseries Bayesian log-odds};
+
+  % outputs
+  \node[out,right=1.1cm of F,yshift=2.4cm] (o1) {Street flood timeline\\\footnotesize 5 min, 3 h};
+  \node[out,below=of o1] (o2) {Surcharging\\manholes};
+  \node[out,below=of o2] (o3) {Flood-safe routing\\\footnotesize A* / Dijkstra};
+  \node[out,below=of o3] (o4) {Ward / basin\\risk table};
+
+  \foreach \s in {rain,dem,drains,osm} \draw[arr] (\s.east) -- (A.west);
+  \foreach \s in {hist,osm,rain} \draw[arr] (\s.east) -- (B.west);
+  \draw[arr] (A.east) -- (F.west);
+  \draw[arr] (B.east) -- (F.west);
+  \foreach \o in {o1,o2,o3,o4} \draw[arr] (F.east) -- (\o.west);
+  \draw[arr,dashed] (A.north east) to[bend left=18] (o1.west);
+
+  \begin{scope}[on background layer]
+    \node[draw=ink!30,dashed,rounded corners,fit=(rain)(hist),inner sep=6pt,
+          label={[font=\footnotesize\bfseries,text=ink!70]above:Data layer}] {};
+    \node[draw=ink!30,dashed,rounded corners,fit=(o1)(o4),inner sep=6pt,
+          label={[font=\footnotesize\bfseries,text=ink!70]above:Outputs}] {};
+  \end{scope}
+\end{tikzpicture}
+\caption{DRAIN OUT architecture. Blue: built; orange: designed. The dashed arrow is the
+path that runs today: Model~A's street forecast goes to the outputs directly.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Implementation status}
+
+\begin{longtable}{@{}p{5.2cm}p{8.6cm}l@{}}
+\toprule
+\textbf{Component} & \textbf{What it does} & \textbf{Status}\\
+\midrule\endhead
+Drain network builder & Merges GCC survey and 92 digitised ward maps into one directed graph, repairs missing links & \built\\
+Hydraulic capacity & Manning capacity, condition and obstruction factors, Rational-method inflow & \built\\
+Terrain conditioning & Smoothing, channel burning, pit filling, survey-level correction & \built\\
+Storage zones & h-minima + watershed segmentation, fill curves & \built\\
+Model A (coupled model) & 1D drains + 2D surface, HEC-22 inlets, weir exchange, surcharge & \built\\
+Street timeline & Floods-at, impassable-at, peak, clears-at per street, 5-min steps & \built\\
+Flood-safe routing & Depth-costed A* and Dijkstra over 80,206 roads & \built\\
+What-if controls & Scenario rainfall, drain condition (silting) & \built\\
+Model B (historical pattern) & Return-period street signature, event rarity, non-stationary refit & \planned\\
+Ensemble for Model A & Perturbed runs to turn depth into probability & \planned\\
+Fusion layer & Log-odds fusion, agreement flags & \planned\\
+Validation on 2015 & Hit rate, false alarms, depth error at 192 measured points & \planned\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\section{Data foundation}
+
+Every dataset is real, named, and cross-checked against a second independent source
+before use.
+
+\begin{longtable}{@{}p{3.0cm}p{6.2cm}p{5.4cm}@{}}
+\toprule
+\textbf{Layer} & \textbf{Source and size} & \textbf{Cross-checked against}\\
+\midrule\endhead
+Drain network (ward maps) & GCC / SECON-JBA base-map sheets, 92 wards, digitised by OCR: 12,566 drains, 1,010~km, manhole to manhole & Surveyors' flow arrows; manhole chain numbering; the CSV positions\\
+Manholes & 7,951 manholes with drain top, invert, road-edge level, width, depth & Ground-level control points on the sheets (agree with the DEM datum to 0.3~m)\\
+Drain network (city) & GCC storm water drain survey, 10,240 drains (7,472 used outside the ward maps, 1,457~km) & Ward maps where both exist\\
+Terrain & GEDTM30 bare-earth DTM, 1 arc-second (about 30~m) & Copernicus COP30; supplied elevation point file; EGM2008 geoid\\
+Buildings & OpenStreetMap, 373,298 footprints as built share per cell & DEM error at surveyed manholes\\
+Water bodies & OpenStreetMap lakes, tanks, ponds, 917 ways & Kept by pit filling (Pallikaranai, Porur, Puzhal survive)\\
+Streets & OpenStreetMap, 80,206 roads & OSM bridge tags (1,011 bridges excluded)\\
+Channels & OSM waterways (574) + basin model macro/micro drains, canals, rivers (934 lines) & Stated length vs drawn geometry (median within 2\%)\\
+Rainfall & Open-Meteo 15-minute precipitation & Open-Meteo hourly feed, hour for hour\\
+Historical & Flood extents at 5/10/25/50/100/200-year return periods; hazard zones (7,453 polygons, 5 classes); 753 flooding points (2015); 192 inundation points with depth & Each other (Section~\ref{sec:modelB})\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\section{Drainage network construction \built}
+
+\subsection{Two surveys, one network}
+The GCC survey covers the whole city but records almost every section as square. The
+SECON-JBA ward maps draw 92 wards manhole by manhole with measured sections and
+levels, but exist only as PDF drawings. The sheets were georeferenced from their own
+grid lines (exact to 0.1~m) and read by OCR into drains with the surveyed invert and
+section at every manhole.
+
+Where a ward-map drain lies along a CSV drain for at least $60\%$ of the CSV drain's
+length (sampled every 15~m, within 20~m), the two are the same drain measured twice:
+the ward-map drain replaces the CSV drain and borrows its condition, material and
+street name.
+
+\subsection{Graph topology}
+The network is a directed graph $G=(V,E)$: vertices are junctions, edges are drains.
+\begin{itemize}
+  \item \textbf{Junctions.} Survey points within 15~m (the width of the road two drains
+        meet in) snap to one junction; ward-map points join only where they coincide
+        (0.5~m).
+  \item \textbf{Flow direction} comes from the invert levels: water runs from the
+        higher invert to the lower. Inverts outside $[-5, 100]$~m above MSL are data
+        entry errors (e.g.\ 104,860) and give ``unknown'' rather than a wrong direction.
+  \item \textbf{Slope} $S = (z_{\text{start}}-z_{\text{end}})/L$ is clamped to
+        $[0.0005,\,0.05]$: below, the fall is within survey error; above, on ground as
+        flat as Chennai's, it is a data error.
+\end{itemize}
+
+\subsection{Missing-link awareness}
+Real survey networks are broken in ways a naive graph turns into wrong answers.
+Three repairs make the topology honest:
+\begin{enumerate}
+  \item \textbf{Gap closing.} A drain end that nothing carries on from is joined to the
+        nearest other drain within 30~m, the typical gap between two survey traverses.
+  \item \textbf{Unsized drains.} 798 drains have no recorded size. Left unsized they
+        would carry without limit \textendash{} an infinite pipe that empties a pond in
+        one step. They take the median measured section ($0.88 \times 0.70$~m) and are
+        marked \emph{assumed}.
+  \item \textbf{Blind ends.} 4,045 drains end where no mapped channel takes over (more
+        than 100~m from any canal, river or nullah, and not at the sea). Their water is
+        put back on the ground there and the surface carries it on downhill: water with
+        nowhere mapped to go cannot vanish. Treating them as free outfalls instead
+        would report about 30\% fewer impassable streets at 30~mm/h \textendash{} the
+        size of the error this repair prevents.
+\end{enumerate}
+
+\subsection{Hydraulic capacity}
+Each drain's full-flow capacity is Manning's equation:
+\begin{equation}
+  Q_{\text{cap}} = \frac{1}{n}\,A\,R^{2/3}\,S^{1/2},\qquad R=\frac{A}{P}
+\end{equation}
+with $A$ the flow area, $P$ the wetted perimeter (a closed box also wets its soffit),
+$S$ the slope and $n$ from the surveyed wall material:
+
+\begin{center}
+\begin{tabular}{@{}lc@{\hspace{1.5cm}}lc@{}}
+\toprule
+Material & $n$ & Material & $n$\\
+\midrule
+Concrete / RCC & 0.015 & Stone / masonry & 0.020\\
+Brick & 0.017 & Earth / soil (kacha) & 0.030\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The capacity actually available is reduced by the surveyed state of the drain:
+\begin{equation}
+  Q_{\text{eff}} = Q_{\text{cap}} \cdot f_{\text{cond}} \cdot f_{\text{obs}} \cdot \delta,
+  \qquad f_{\text{cond}} \in \{1.0\ \text{good},\ 0.85\ \text{unknown},\ 0.6\ \text{bad}\},\quad
+  f_{\text{obs}} \in \{1.0,\ 0.8\}
+\end{equation}
+where $f_{\text{obs}}=0.8$ when the survey records a junction box, pole or tank standing
+in the drain, and $\delta\in[0,1]$ is the user's \emph{drain condition} setting (1 as
+surveyed, 0.5 half silted). Normal depth at a given inflow is solved from the same
+equation, giving depth, velocity and Froude number per drain.
+
+\subsection{Catchments and inflow}
+Each drain collects a strip $w = 60$~m wide (carriageway plus the plots draining onto
+it). Catchments accumulate down the graph, so a drain's demand is the runoff of
+everything upstream. Inflow follows the Rational method:
+\begin{equation}
+  Q = \frac{C\, i\, A}{3.6\times 10^{6}}\quad [\text{m}^3/\text{s}],\qquad C = 0.75
+\end{equation}
+with $i$ in mm/h and $A$ in m$^2$ ($C$ from the IS\,/\,CPHEEO range 0.70\textendash0.95
+for built-up areas). For the network-wide load, spill is \emph{routed}: a drain passes
+on only $\min(\text{inflow}, Q_{\text{eff}})$, so water already on the street upstream is
+not counted again at every drain below.
+
+% =====================================================================
+\section{Terrain and surface model \built}
+
+\subsection{Conditioning the DEM}
+A 30~m bare-earth model misreads a dense city in predictable ways; each is corrected
+by a named step, with its setting chosen by checking that real water bodies survive
+and artefacts do not.
+\begin{enumerate}
+  \item \textbf{Median filter} ($3\times3$ cells, 90~m) removes 3\textendash5~m
+        cell-to-cell jumps where buildings bleed through ($5\times5$ starts to erase
+        Porur lake).
+  \item \textbf{Channel burning.} Cells under every mapped river, canal and nullah are
+        lowered 2~m, so road embankments and culverts are not read as dams.
+  \item \textbf{Pit filling.} Closed hollows smaller than 16 cells (1.5~ha), or deeper
+        than 1~m and smaller than 64 cells (6~ha), are DEM noise and filled \textendash{}
+        unless a mapped water body is there.
+  \item \textbf{Survey correction.} At 4,523 manholes the road-edge level is known.
+        The DEM stands a median 4~m high in built-up wards. The gap is fitted as
+        \begin{equation}
+          z_{\text{DEM}} - z_{\text{survey}} = a + b\cdot c_{\text{build}}
+        \end{equation}
+        with $c_{\text{build}}$ the building share within 75~m; the clutter term
+        $b\cdot c$ (about 3~m from open to fully built) is removed everywhere, and each
+        surveyed area's own residual is spread with a Gaussian kernel
+        ($\sigma = 800$~m). The fit was validated on wards held out of it.
+\end{enumerate}
+
+\subsection{Storage zones}
+Every regional minimum at least 2~cm deep (the $h$-minima transform) seeds a zone, and
+a watershed gives every cell the minimum its rain runs to. Nested hollows stay separate
+zones, so two dips either side of a low ridge fill on their own and join only once
+water tops the ridge. The sea and the box edge form one extra zone where water leaves
+the model. Each zone $k$ has a fill curve $V_k(h)$ integrated over its cells, with only
+the open (unbuilt) share of each cell able to hold water (at least 10\%).
+
+% =====================================================================
+\section{Model A: Physics Nowcast Model \built}
+
+Model~A is a \emph{dual drainage} model: the street surface (2D) and the drain
+network (1D) run as one system, exchanging water every minute.
+
+\subsection{Rainfall input}
+The next three hours of rain come from Open-Meteo's 15-minute product, trimmed to
+start at the current clock step and spread evenly over three 5-minute steps (the
+honest limit of the input). The feed is a stand-in for an IMD Doppler radar nowcast,
+which would replace one function and nothing else. In \emph{scenario} mode a constant
+rate is held for three hours; every response states which mode it is.
+
+\subsection{Inlets}
+Rain on the strip beside a drain reaches it through gully gratings (closed drains) or
+over its open edge (open drains), by the FHWA HEC-22 sag-inlet equations:
+\begin{equation}
+  Q_{\text{grate}} = \min\!\Big( C_w P d^{3/2},\; C_o A_o \sqrt{2 g d} \Big)\cdot(1-\kappa),
+  \qquad C_w = 1.66,\ C_o = 0.67
+\end{equation}
+for a $450\times450$~mm grating ($P = 1.8$~m, $A_o = 0.10$~m$^2$) every 30~m, half
+clogged ($\kappa=0.5$, HEC-22's design state and Chennai's everyday one). Open drains
+take water over both edges as a side weir with the same coefficient. While rain is
+falling the inlets see 5~cm of gutter flow (IRC:SP:50); standing water over an inlet
+drains in at the depth it stands.
+
+\subsection{The 1D network}
+What the inlets catch is routed down the directed drain graph. Each drain accepts at
+most $Q_{\text{eff}}$ and delays what it carries as a linear reservoir with its own
+travel time $t = L / v_{\text{full}}$.
+
+\subsection{The 2D surface}
+Neighbouring zones exchange water over the cell faces they share as flow over a
+broad-crested weir, drowned from downstream by the Villemonte (1947) reduction:
+\begin{equation}
+  q = \sqrt{g}\left(\tfrac{2}{3}H_u\right)^{3/2}
+      \left[1-\left(\frac{H_d}{H_u}\right)^{1.5}\right]^{0.385}
+  \quad[\text{m}^3/\text{s per m of crest}]
+\end{equation}
+where $H_u, H_d$ are the upstream and downstream heads over the crest. This is the
+Rapid Flood Spreading Method (UK Environment Agency) with an explicit weir exchange in
+place of instant spreading, so water travels along the terrain towards the sea instead
+of stopping where it fell. Faces more than 3~m above the lowest crest between two
+zones are pruned.
+
+\subsection{Surcharge and backflow}
+What a drain cannot take comes back up at the junction it was trying to enter: the
+water surcharges out of that manhole onto the zone around it and is spread by the
+surface from there. This is how the model pinpoints \emph{which manholes overflow,
+when, and how much}.
+
+\subsection{Time stepping and stability}
+The surface and the network exchange water every $\Delta t = 60$~s; the surface takes
+two sub-steps inside each. A sub-step may close at most half the level difference
+between two zones, so the explicit exchange never overshoots equal levels and stays
+stable without an implicit solver.
+
+\subsection{Mass balance}
+Every volume is accounted for. Over a run,
+\begin{equation}
+  V_{\text{runoff}} = V_{\text{outfall}} + V_{\text{sea}} + V_{\text{surface}}
+                    + V_{\text{network}} + \varepsilon ,
+\end{equation}
+and the automated tests require $|\varepsilon| < 10^{-6}\,V_{\text{runoff}}$ on the
+whole city.
+
+\subsection{From water levels to streets}
+Every OpenStreetMap road is densified to a point every 20~m (bridges excluded: the DEM
+under a deck is the river). A point's depth at step $t$ is its zone's water level less
+its ground. For every stretch and every named street (grouped by name \emph{and} ward:
+Chennai has a ``5th Street'' in dozens of neighbourhoods) the model reports:
+\begin{itemize}
+  \item \textbf{floods at}: first step deeper than 5~cm (shallower is wet tarmac);
+  \item \textbf{impassable at}: first step deeper than 30~cm;
+  \item \textbf{peak} depth and when it occurs;
+  \item \textbf{clears at}: when it drops back below 5~cm, or still wet at 3~h;
+  \item its \textbf{ward, zone, locality}, and the \textbf{river basin} and nearest named
+        channel its water belongs to (Adyar, Cooum, Kosasthalayar, \dots).
+\end{itemize}
+
+\subsection{Performance}
+One three-hour storm over the whole city runs in about 6\textendash15~s on a single CPU
+core. Each storm is run once and shared by every user asking about it (the 12 most
+recent are kept); the built model is cached on disk and reloads in seconds.
+
+% =====================================================================
+\section{Model B: Historical Pattern Model \planned}
+\label{sec:modelB}
+
+\subsection{Why recurrence needs its own model}
+Floods in Chennai recur: 2005, 2015, 2021, 2023. The intuition ``a big flood comes
+every $N$ years'' is right in spirit but needs care. A $T$-year event has probability
+$1/T$ in any one year; the chance of at least one in the next $n$ years is
+\begin{equation}
+  P(\geq 1 \text{ in } n \text{ years}) = 1 - \left(1-\frac{1}{T}\right)^{n}.
+\end{equation}
+For $T = n = 15$ this is $64.5\%$, not certainty \textendash{} and the probability does
+not ``build up'' in the years without one. What \emph{does} change over the years is
+$T$ itself: rainfall extremes intensify and the city paves over its storage, so a
+storm that was a 50-year event in 1990 may be a 15-year event today. A model fitted
+once to a fixed record inherits the bias of that record. Model~B is therefore designed
+to be re-fitted, not frozen.
+
+\subsection{Historical inputs (in hand)}
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Dataset & Features & Content\\
+\midrule
+Flow extent, 5-year return period & 579 & polygons, Low / Moderate / High, 128.6 km$^2$\\
+Flow extent, 10-year & 678 & 172.0 km$^2$\\
+Flow extent, 25-year & 549 & 220.1 km$^2$\\
+Flow extent, 50-year & 491 & 251.7 km$^2$\\
+Flow extent, 100-year & 422 & 266.3 km$^2$\\
+Flow extent, 200-year & 383 & 273.9 km$^2$\\
+Flood hazard zones & 7,453 & Very Low to Very High\\
+Flooding points, December 2015 & 753 & named locations, GCC zone and division\\
+Inundation points with depth & 192 & measured depth and remark\\
+\bottomrule
+\end{tabular}
+\end{center}
+(The inundation depth field's unit is not stated in the source and is confirmed before
+use.)
+
+\subsection{Street recurrence signature}
+For every 20~m street point $s$ already indexed by Model~A:
+\begin{itemize}
+  \item $T_{\min}(s)$ \textendash{} the smallest return period whose flood extent
+        covers $s$ (a street inside the 5-year extent floods often; one only inside the
+        200-year extent, rarely), with the extent's severity class;
+  \item $H(s)$ \textendash{} the hazard-zone class at $s$;
+  \item $D_{2015}(s)$ \textendash{} distance to the nearest 2015 flooding point, and
+        the measured depth there where one exists.
+\end{itemize}
+These are computed once; they do not depend on the storm.
+
+\subsection{How rare is this storm?}
+The rain Model~A is running on is converted to a return period through
+intensity\textendash duration\textendash frequency (IDF) curves: for each duration
+$d \in \{1, 3, 6, 24\}$~h, annual maxima of rainfall depth are fitted with a
+Generalised Extreme Value distribution
+\begin{equation}
+  F(x) = \exp\!\left\{-\left[1+\xi\,\frac{x-\mu}{\sigma}\right]^{-1/\xi}\right\},
+\end{equation}
+and the storm's return period is $T_{\text{event}} = \max_d \frac{1}{1-F_d(x_d)}$, the
+rarest of its durations. Annual maxima come from IMD gridded rainfall over Chennai.
+
+\subsection{Non-stationary refit: removing the drifting bias}
+\label{sec:nonstationary}
+To follow a changing climate and a changing city, the GEV location is allowed to move
+in time,
+\begin{equation}
+  \mu(t) = \mu_0 + \mu_1\, t ,
+\end{equation}
+fitted by maximum likelihood on a sliding 30-year window and refitted after every
+north-east monsoon. A significant $\mu_1 > 0$ means extremes are intensifying and the
+same rain is less rare than the old record says; the model's return periods move with
+it rather than staying anchored to the past. This is the specific answer to ``a single
+model's bias changes with the years''.
+
+\subsection{Model B output}
+For a storm of return period $T_{\text{event}}$, the historical prior that street $s$
+floods is
+\begin{equation}
+  p_B(s) = \operatorname{logit}^{-1}\!\big(\beta_0 + \beta_1\,\mathbf{1}[T_{\min}(s)\le T_{\text{event}}]
+          + \beta_2\,H(s) + \beta_3\, e^{-D_{2015}(s)/\ell}\big),
+\end{equation}
+with $\beta$, $\ell$ fitted on the 2015 event.
+
+% =====================================================================
+\section{Fusion of the two models \planned}
+\label{sec:fusion}
+
+\subsection{Turning Model A into a probability}
+Model~A gives a depth, not a probability. An ensemble of $M$ runs perturbs the
+quantities with real uncertainty \textendash{} runoff coefficient $C$, drain condition
+$\delta$, inlet spacing and the rainfall itself \textendash{} and
+\begin{equation}
+  p_A(s) = \frac{1}{M}\sum_{m=1}^{M} \mathbf{1}\big[d_m(s) > 5\ \text{cm}\big].
+\end{equation}
+
+\subsection{Log-odds fusion}
+\begin{equation}
+  \operatorname{logit} p(s) = w_A \operatorname{logit} p_A(s)
+                            + w_B \operatorname{logit} p_B(s) + c,
+\end{equation}
+with $w_A, w_B, c$ fitted on held-out historical events. Because Model~A is driven by
+the live rain, $w_A$ dominates inside the 3-hour window; $w_B$ carries the most weight
+where the survey is thin (outside the 92 ward maps).
+
+\subsection{Agreement flags}
+The disagreement between the models is itself a finding:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Model A (physics) & Model B (history) & Meaning\\
+\midrule
+wet & high & \textbf{Confirmed} \textendash{} act first\\
+dry & high & \textbf{Watch} \textendash{} history says yes; check blocked drains\\
+wet & low & \textbf{New hotspot} \textendash{} terrain or land-use change, encroachment\\
+dry & low & Clear\\
+\bottomrule
+\end{tabular}
+\end{center}
+The \emph{new hotspot} class is how the system notices change the historical record
+has not seen yet: new construction, a filled tank, a lake losing storage.
+
+% =====================================================================
+\section{Flood-safe routing \built}
+
+The 80,206 roads become a graph whose vertices are junctions and dead ends and whose
+edges are the stretches between them. Each stretch is sampled every 30~m against the
+flood forecast and costed by its deepest water $d$ over the trip window (from departure
+to 30 minutes after; departure anywhere in the next three hours):
+\begin{equation}
+  c(e) =
+  \begin{cases}
+    L_e & d < 5\ \text{cm}\\[2pt]
+    L_e\left(1 + \dfrac{d}{10\ \text{cm}}\right) & 5 \le d < 30\ \text{cm}\\[6pt]
+    \infty & d \ge 30\ \text{cm (impassable)}
+  \end{cases}
+\end{equation}
+so 20~cm of water makes a road three times as long, and a longer dry road wins over a
+short wet one. Dijkstra's algorithm and A* both find the cheapest path; A* uses the
+straight-line distance to the destination as its heuristic, which is admissible (no
+road is shorter than a straight line and water only adds cost), so it returns the same
+optimum while settling far fewer junctions. The route is set against the plain
+shortest path to show the flooded kilometres avoided and the extra distance paid.
+
+% =====================================================================
+\section{Validation}
+
+\subsection{Built: automated checks}
+22 automated tests run on every change: Manning and normal-depth formulas, HEC-22 and
+weir coefficients, synthetic two-bowl terrain (zones, fill curves, spill over a ridge,
+mass conservation), the whole-city mass balance, Dijkstra and A* agreement, the drain
+network's catchment accumulation, and the web layer's error handling.
+
+\subsection{Designed: skill against December 2015}
+Model~A is driven with the December 2015 rainfall and compared at the 753 flooding
+points and 192 depth points:
+\begin{equation}
+  \text{POD} = \frac{H}{H+M},\qquad
+  \text{FAR} = \frac{F}{H+F},\qquad
+  \text{CSI} = \frac{H}{H+M+F},
+\end{equation}
+with $H$ hits, $M$ misses and $F$ false alarms, plus the depth error at measured
+points. Until this is done the reliable output is the \emph{order and timing} in which
+streets flood rather than exact centimetres; depths over about 1~m are usually DEM
+error. The same comparison fits Model~B's $\beta$ and the fusion weights, on separate
+folds.
+
+% =====================================================================
+\section{Software architecture \built}
+
+\begin{itemize}
+  \item \textbf{Backend}: Python, FastAPI. Endpoints (\texttt{app/api}) only validate a
+        request and call a service; all logic lives in \texttt{app/services}, one module
+        per concern (drain network, hydraulics, terrain, surface, coupled model,
+        forecast, routing, rainfall). Services raise typed errors that one handler turns
+        into JSON responses.
+  \item \textbf{Numerics}: NumPy, SciPy (KD-trees, image filters), scikit-image
+        (h-minima, watershed).
+  \item \textbf{Caching}: the built network and terrain are stored on disk under a key
+        hashed from every input file and the code that builds it; changing any input
+        rebuilds exactly that piece.
+  \item \textbf{Frontend}: Leaflet map, mobile-first, works in any phone browser without
+        install; HTTPS for GPS.
+  \item \textbf{Interfaces}: REST/JSON for the street forecast, drains, routing and
+        wards, so a GCC control room or an IMD feed can integrate directly.
+\end{itemize}
+
+% =====================================================================
+\section{Implemented resources \built}
+\label{sec:resources}
+
+This section inventories everything the prototype is built from and everything it
+provides: the data, the external services, the engineering standards, the software,
+the code, the interfaces and the checks. Each item is in the repository and in use.
+
+\subsection{End-to-end drainage system pipeline}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.42cm,
+  stage/.style={draw=accent,fill=accent!10,rounded corners=3pt,font=\small\bfseries,
+                minimum width=2.9cm,minimum height=1.05cm,align=center,text width=2.7cm},
+  step/.style={draw=ink!35,fill=white,rounded corners=2pt,font=\scriptsize,align=left,
+               text width=8.1cm,minimum height=1.05cm,inner sep=4pt},
+  mod/.style={font=\scriptsize\ttfamily,text=built,align=left,text width=3.3cm},
+  arr/.style={-{Stealth[length=2mm]},thick,color=accent}]
+
+  \node[stage] (s1) {1. Acquire};
+  \node[step,right=0.3cm of s1] (d1) {GCC drain survey CSV (10,240 drains); 92 SECON-JBA ward
+     sheets (PDF); GEDTM30 and COP30 DEMs; OSM roads, waterways, buildings, water bodies;
+     basin channel layer; Open-Meteo rainfall};
+  \node[mod,right=0.2cm of d1] (m1) {scripts/fetch\_dem.py\\scripts/fetch\_buildings.py\\services/osm.py};
+
+  \node[stage,below=of s1] (s2) {2. Digitise};
+  \node[step,right=0.3cm of s2] (d2) {Ward sheets rendered in tiles and read by OCR; georeferenced
+     from their own UTM grid (0.1 m); 7,951 manholes with top, invert, road level, size;
+     12,566 drains drawn manhole to manhole};
+  \node[mod,right=0.2cm of d2] (m2) {scripts/digitise\_wards.py\\data/ward\_points.json};
+
+  \node[stage,below=of s2] (s3) {3. Merge};
+  \node[step,right=0.3cm of s3] (d3) {Ward-map drain replaces a CSV drain it overlaps for $\ge$60\%
+     of its length (within 20 m) and borrows its condition, material, name; duplicates within
+     10 m dropped};
+  \node[mod,right=0.2cm of d3] (m3) {services/drain\_network.py};
+
+  \node[stage,below=of s3] (s4) {4. Build graph};
+  \node[step,right=0.3cm of s4] (d4) {Junctions snapped at 15 m; flow direction from inverts;
+     invalid inverts rejected; slopes clamped to 1:2000\,--\,1:20; catchments accumulated
+     down the directed graph};
+  \node[mod,right=0.2cm of d4] (m4) {services/hydraulics.py\\services/drain\_network.py};
+
+  \node[stage,below=of s4] (s5) {5. Repair};
+  \node[step,right=0.3cm of s5] (d5) {Gaps up to 30 m closed; 798 unsized drains given the
+     median measured section (marked assumed); 4,045 blind ends return water to the
+     surface instead of losing it};
+  \node[mod,right=0.2cm of d5] (m5) {services/drain\_network.py\\services/coupled.py};
+
+  \node[stage,below=of s5] (s6) {6. Size};
+  \node[step,right=0.3cm of s6] (d6) {Manning capacity per drain, reduced by condition,
+     obstruction and the silting setting; normal depth, velocity and Froude number;
+     Rational-method demand};
+  \node[mod,right=0.2cm of d6] (m6) {services/hydraulics.py};
+
+  \node[stage,below=of s6] (s7) {7. Couple};
+  \node[step,right=0.3cm of s7] (d7) {Drains placed on the conditioned terrain's storage zones;
+     HEC-22 inlets; 1D network and 2D surface exchange every 60 s; surcharge out of
+     manholes; mass balance checked};
+  \node[mod,right=0.2cm of d7] (m7) {services/surface.py\\services/coupled.py};
+
+  \node[stage,below=of s7] (s8) {8. Report};
+  \node[step,right=0.3cm of s8] (d8) {Per-street timeline, surcharging manholes, ward and basin
+     tables, flood-safe routes; served as REST/JSON and drawn on the dashboard};
+  \node[mod,right=0.2cm of d8] (m8) {services/forecast.py\\services/navigation.py\\app/api/*};
+
+  \foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8} \draw[arr] (\a) -- (\b);
+\end{tikzpicture}
+\caption{The drainage system as built, stage by stage, with the module that implements
+each stage (green).}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Data resources}
+
+{\small
+\begin{longtable}{@{}p{4.3cm}p{3.1cm}r p{4.6cm}@{}}
+\toprule
+\textbf{Resource (file)} & \textbf{Provider} & \textbf{Size} & \textbf{Used for}\\
+\midrule\endhead
+\texttt{gcc\_storm\_water\_drains (1).csv} & Greater Chennai Corporation & 6.7 MB & City-wide drain survey: geometry, size, invert, material, condition\\
+\texttt{Ward/*.pdf} (92 sheets) & GCC / SECON-JBA, surveyed Dec 2020 & 92 files & Manhole-level drain network and levels\\
+\texttt{ward\_points.json} & Digitised from the sheets & 9.4 MB & 7,951 manholes, 12,566 drains, control points\\
+\texttt{ward\_sheets.json} & Sheet title blocks & 10 KB & Ward and zone index, 196 wards\\
+\texttt{GEDTM30.tif} & OpenGeoHub via OpenTopography & 1 arc-sec & Bare-earth terrain (primary)\\
+\texttt{COP30.tif}, Copernicus tiles & ESA Copernicus GLO-30 & 1 arc-sec & Terrain cross-check and fallback\\
+\texttt{dem\_points (1).csv} & Supplied elevation points & 36 KB & Datum check of the DEM\\
+\texttt{macro\_drains.csv}, \texttt{micro\_drains.csv}, \texttt{buckingham\_canal.csv}, \texttt{krishna\_water\_canal.csv}, \texttt{rivers\_streams.csv} & Chennai Basin Drainage Maps (OpenCity) & 3.2 MB & 934 named channels by river sub-basin; channel burning; basin labels\\
+\texttt{chennai\_streets.geojson} & OpenStreetMap (Overpass) & 25.6 MB & 80,206 roads: street index and routing graph\\
+\texttt{chennai\_waterways.geojson} & OpenStreetMap (Overpass) & 0.3 MB & 574 rivers, canals, nullahs for channel burning\\
+\texttt{building\_fraction.npz} & OpenStreetMap footprints & 0.2 MB & Built share per cell (373,298 buildings)\\
+\texttt{water\_bodies.npz} & OpenStreetMap & 35 KB & 917 lakes and tanks kept as storage\\
+\texttt{Historical Flood/*.csv} & Chennai flood studies & 65 MB & Model B inputs (Section~\ref{sec:modelB})\\
+\bottomrule
+\end{longtable}}
+
+\subsection{External services}
+
+{\small
+\begin{longtable}{@{}p{3.4cm}p{5.0cm}p{2.3cm}p{4.0cm}@{}}
+\toprule
+\textbf{Service} & \textbf{Purpose} & \textbf{Access} & \textbf{Module}\\
+\midrule\endhead
+Open-Meteo & 15-minute rainfall nowcast; hourly and daily forecast; rain grid & Free, no key & \texttt{services/rainfall.py}, \texttt{services/weather.py}\\
+OpenWeather & Current conditions; rain, temperature, wind, cloud map tiles (proxied, key kept server-side) & API key & \texttt{services/weather.py}\\
+OSM Overpass API & Roads, waterways, buildings, water bodies & Free & \texttt{services/osm.py}, \texttt{scripts/fetch\_buildings.py}\\
+OSM Nominatim & Place search inside the Chennai box & Free, cached & \texttt{services/navigation.py}\\
+OpenTopography & GEDTM30 and COP30 terrain download & API key & \texttt{scripts/fetch\_dem.py}\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Engineering standards and methods implemented}
+
+{\small
+\begin{longtable}{@{}p{4.2cm}p{7.0cm}p{3.5cm}@{}}
+\toprule
+\textbf{Standard / method} & \textbf{Implemented as} & \textbf{Module}\\
+\midrule\endhead
+Manning's equation & Full-flow capacity and normal depth of every drain, open and closed sections & \texttt{hydraulics.py}\\
+Rational method ($Q = CiA$) & Runoff demand, $C = 0.75$ (IS / CPHEEO built-up range) & \texttt{hydraulics.py}\\
+CPHEEO Storm Water Drainage Manual & Runoff coefficient range; design-storm drains where none are surveyed (50 mm/h) & \texttt{hydraulics.py}, \texttt{coupled.py}\\
+FHWA HEC-22 sag inlets & Grating weir/orifice capture, 50\% clogging, side-weir open drains & \texttt{coupled.py}\\
+IRC:SP:50 & 5 cm gutter flow seen by on-grade inlets & \texttt{coupled.py}\\
+Broad-crested weir + Villemonte & Zone-to-zone surface exchange, drowned flow & \texttt{coupled.py}\\
+Rapid Flood Spreading Method & Storage-zone surface model (UK Environment Agency) & \texttt{surface.py}, \texttt{coupled.py}\\
+Linear reservoir routing & Drain travel time $L / v_{\text{full}}$ & \texttt{coupled.py}\\
+Mathematical morphology & $h$-minima, watershed, area closing for zones and pit filling & \texttt{surface.py}\\
+Dijkstra, A* & Flood-costed shortest paths with admissible heuristic & \texttt{routing.py}\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Software stack}
+
+{\small
+\begin{longtable}{@{}p{3.2cm}p{2.0cm}p{9.5cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Version} & \textbf{Role}\\
+\midrule\endhead
+Python & 3.12 & Language for the backend, models and data tools\\
+FastAPI & 0.115.0 & REST API and page serving; typed request validation\\
+Uvicorn & 0.30.6 & ASGI server; HTTPS for GPS on phones\\
+HTTPX & 0.27.2 & Async client for every upstream API\\
+NumPy & 2.5.2 & Grids, fill curves, vectorised coupled model\\
+SciPy & 1.18.1 & KD-trees for snapping and search; image filters\\
+scikit-image & 0.26.0 & $h$-minima, watershed, area closing\\
+tifffile & 2026.8.23 & GeoTIFF DEM reading without GDAL\\
+Pillow & 12.3.0 & Shaded-relief elevation image\\
+Jinja2 & 3.1.6 & HTML templates\\
+python-dotenv & 1.0.1 & Settings from \texttt{.env}\\
+cryptography & 50.0.1 & Local HTTPS certificate\\
+PyMuPDF, RapidOCR & -- & Ward-sheet rendering and OCR (data preparation only)\\
+Leaflet & 1.9.4 & Interactive map in the browser\\
+pytest & 9.1.1 & Automated test suite\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Codebase}
+
+The backend is layered: \textbf{API} (request in, JSON out) $\rightarrow$
+\textbf{services} (all logic) $\rightarrow$ \textbf{config} (paths and constants,
+defined once). No endpoint contains model logic; no service depends on the web layer.
+
+{\small
+\begin{longtable}{@{}p{4.4cm}r p{9.6cm}@{}}
+\toprule
+\textbf{Module} & \textbf{Lines} & \textbf{Responsibility}\\
+\midrule\endhead
+\multicolumn{3}{@{}l}{\textit{Models and data services (\texttt{app/services})}}\\
+\texttt{drain\_network.py} & 650 & Survey + ward-map merge, graph, gap repair, drain reports\\
+\texttt{coupled.py} & 641 & Dual-drainage model: inlets, network, surface exchange, surcharge\\
+\texttt{surface.py} & 464 & DEM conditioning, survey correction, storage zones, street depths\\
+\texttt{hydraulics.py} & 452 & Manning, normal depth, Rational method, drain graph routing\\
+\texttt{forecast.py} & 329 & Storm runs, cached; street, basin and manhole tables\\
+\texttt{weather.py} & 313 & OpenWeather and Open-Meteo clients\\
+\texttt{terrain.py} & 305 & DEM reading, grids, point lookups, relief image\\
+\texttt{routing.py} & 264 & Street graph, Dijkstra, A*, depth costs\\
+\texttt{navigation.py} & 165 & Geocoding, trip window, route comparison\\
+\texttt{channels.py} & 136 & Basin channel layer, nearest channel and sub-basin\\
+\texttt{osm.py} & 106 & Overpass downloads of roads and waterways\\
+\texttt{rainfall.py} & 103 & 3-hour rainfall in 5-minute steps; scenario mode\\
+\texttt{wards.py} & 89 & Ward index, zone labels, base-map files\\
+\texttt{street\_index.py} & 59 & Streets densified to 20 m points\\
+\texttt{diskcache.py} & 55 & Input-hashed on-disk cache of built models\\
+\multicolumn{3}{@{}l}{\textit{Web layer (\texttt{app})}}\\
+\texttt{api/*.py} (6 routers) & 277 & Weather, streets, drains, flood, navigation, wards\\
+\texttt{main.py}, \texttt{pages.py} & 101 & App assembly, start-up warm-up, HTML pages\\
+\texttt{config.py}, \texttt{errors.py} & 114 & Settings; typed errors mapped to HTTP status\\
+\multicolumn{3}{@{}l}{\textit{Data preparation (\texttt{scripts})}}\\
+\texttt{digitise\_wards.py} & 1,016 & Ward-sheet OCR, georeferencing, network extraction\\
+\texttt{fetch\_dem.py} & 118 & OpenTopography DEM download\\
+\texttt{fetch\_buildings.py} & 110 & OSM buildings and water bodies onto the DEM grid\\
+\texttt{make\_cert.py} & 65 & Local HTTPS certificate for GPS on phones\\
+\multicolumn{3}{@{}l}{\textit{Frontend (\texttt{app/static}, \texttt{app/templates})}}\\
+10 JavaScript modules & 3,184 & Map layers, drains, flood forecast, routing, weather, UI shell\\
+CSS and 3 templates & 1,601 & Mobile-first layout, light and dark themes\\
+\multicolumn{3}{@{}l}{\textit{Quality assurance (\texttt{tests})}}\\
+13 test files & 573 & 22 tests (Section~\ref{sec:qa})\\
+\bottomrule
+\end{longtable}}
+
+\subsection{REST API catalogue}
+
+All endpoints are \texttt{GET}, return JSON unless stated, and are documented live at
+\texttt{/docs} (OpenAPI).
+
+{\small
+\begin{longtable}{@{}p{6.3cm}p{8.4cm}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Returns}\\
+\midrule\endhead
+\multicolumn{2}{@{}l}{\textit{Flood forecast}}\\
+\texttt{/data-collection/rain-ponding/streets} & Street timeline, surcharging manholes, basin table, mass balance; live or scenario; filter by zone or ward\\
+\texttt{/data-collection/nowcast} & Rainfall for the next 3 hours at a point\\
+\texttt{/data-collection/elevation} & Elevation layer bounds, range, colour stops, DEM source\\
+\texttt{/data-collection/elevation.png} & Shaded-relief image (PNG)\\
+\multicolumn{2}{@{}l}{\textit{Drainage}}\\
+\texttt{/data-collection/drains} & Drain network as GeoJSON with capacity, slope, catchment\\
+\texttt{/data-collection/drain-hydraulics} & One drain: survey record, capacity, state at a rainfall, provenance\\
+\texttt{/data-collection/network-summary} & Load across a zone or ward: bands, overloaded drains, routed spill\\
+\texttt{/data-collection/drain-filters} & Zones, wards, drain types, statuses, ward-map coverage\\
+\multicolumn{2}{@{}l}{\textit{Navigation}}\\
+\texttt{/data-collection/route} & Flood-safe and shortest routes, trip window, Dijkstra vs A* statistics\\
+\texttt{/data-collection/geocode} & Places in Chennai matching a name\\
+\multicolumn{2}{@{}l}{\textit{Base layers and weather}}\\
+\texttt{/data-collection/streets} & Road network (GeoJSON)\\
+\texttt{/data-collection/waterways} & Rivers, canals, drains (GeoJSON)\\
+\texttt{/data-collection/weather} & Current conditions by district or coordinates\\
+\texttt{/data-collection/forecast} & Hourly and daily rainfall, next rain spell\\
+\texttt{/data-collection/rain-grid} & Hourly rain on a $7\times7$ grid for the rain-movement map\\
+\texttt{/data-collection/tiles/\{layer\}/\{z\}/\{x\}/\{y\}.png} & Weather map tile (PNG, proxied)\\
+\multicolumn{2}{@{}l}{\textit{Wards and pages}}\\
+\texttt{/data-collection/wards} & Every ward with zone, drain figures, base-map link\\
+\texttt{/resources/ward-map/\{number\}} & Ward base-map sheet (PDF)\\
+\texttt{/}, \texttt{/resources} & Dashboard and ward resources pages (HTML)\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Dashboard}
+
+\begin{itemize}
+  \item \textbf{Map}: drains coloured by live load, flooded street stretches by depth,
+        surcharging manholes, shaded-relief elevation, weather tiles, animated rain
+        movement, GPS location.
+  \item \textbf{Alerts}: live or scenario banner; streets going under, impassable
+        counts per 5-minute step; a time slider across the 3 hours.
+  \item \textbf{Streets}: sortable table of named streets with floods-at, peak, clears-at,
+        ward, locality, basin; CSV download.
+  \item \textbf{Route}: from/to search, departure time, safe versus shortest route,
+        flooded kilometres avoided.
+  \item \textbf{What-if}: scenario rainfall rate and drain condition (silting).
+  \item \textbf{Resources page}: all 196 wards with zone, drain count, length, capacity,
+        drains in poor condition, and each ward's base-map PDF.
+  \item Mobile-first bottom-sheet layout; light and dark themes; no installation.
+\end{itemize}
+
+\subsection{Calibration parameters}
+\label{sec:params}
+Every assumption is a named constant in one place, with its basis, so it can be
+calibrated against observed floods without touching the model code.
+
+{\small
+\begin{longtable}{@{}p{4.2cm}r p{7.3cm}@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Basis}\\
+\midrule\endhead
+Runoff coefficient $C$ & 0.75 & IS / CPHEEO, dense built-up catchment\\
+Catchment strip width & 60 m & Carriageway plus plots, both sides\\
+Condition factor good / unknown / bad & 1.0 / 0.85 / 0.6 & Surveyed drain status\\
+Obstruction factor & 0.8 & Utility or structure in the drain section\\
+Grating spacing, clogging & 30 m, 50\% & HEC-22 design state; gully positions not surveyed\\
+Gutter depth & 5 cm & IRC:SP:50\\
+Unsurveyed-area design storm & 50 mm/h & Rational-method drains where none are surveyed\\
+Outfall-to-channel distance & 100 m & Beyond it, a drain end is blind\\
+Sheet-flow speed & 0.5 m/s & Flat paved ground; lag to be calibrated\\
+DEM median filter & $3\times3$ & Keeps Porur lake, removes building pits\\
+Channel burn depth & 2 m & Embankments not read as dams\\
+Pit filling & 16 cells; 64 cells if $>$1 m & Keeps mapped water bodies\\
+Survey correction spread & $\sigma = 800$ m & One manhole's reach\\
+Coupling step, surface sub-steps & 60 s, 2 & Stability of explicit exchange\\
+Wet / impassable depth & 5 / 30 cm & Reporting and routing thresholds\\
+Route cost & $\times(1 + d/10\,\text{cm})$ & 10 cm doubles a road's cost\\
+Trip window, average speed & 30 min, 20 km/h & Cross-city drive in peak traffic\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Quality assurance}
+\label{sec:qa}
+
+{\small
+\begin{longtable}{@{}p{4.0cm}c p{9.8cm}@{}}
+\toprule
+\textbf{Test file} & \textbf{Tests} & \textbf{What it proves}\\
+\midrule\endhead
+\texttt{test\_hydraulics.py} & 2 & Manning, normal depth, Rational method, slopes, graph routing\\
+\texttt{test\_coupled.py} & 2 & Weir and grate coefficients; two-bowl terrain spills and conserves mass; city run mass balance within $10^{-6}$\\
+\texttt{test\_surface.py} & 1 & Zones split at ridges; pit filling keeps real hollows; depth read-back; street timeline\\
+\texttt{test\_drain\_network.py} & 3 & Flow direction from inverts; catchments never shrink downstream; routed spill never exceeds rain\\
+\texttt{test\_forecast.py} & 2 & Whole-city street forecast end to end; routing agrees between A* and Dijkstra\\
+\texttt{test\_routing.py} & 1 & A* settles fewer junctions for the same cost; water reroutes\\
+\texttt{test\_terrain.py} & 1 & DEM covers the city, no seam at 13\textdegree N, road level below surface\\
+\texttt{test\_channels.py} & 1 & Channel lengths match geometry; places find their basin\\
+\texttt{test\_api.py} & 3 & Pages render; service errors return JSON with correct status; validation\\
+Others (4 files) & 6 & Disk cache, rainfall scenario, street densifying, ward index\\
+\midrule
+\textbf{Total} & \textbf{22} & 12 fast checks on every change; 10 against the real city data\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Deployment and operations}
+\begin{itemize}
+  \item \textbf{Run}: \texttt{pip install -r requirements.txt}, then
+        \texttt{python app/main.py}; HTTPS is switched on automatically when a
+        certificate exists.
+  \item \textbf{Configuration}: API keys and options in \texttt{.env}
+        (\texttt{.env.example} documents each); nothing secret reaches the browser.
+  \item \textbf{Start-up}: the drain network and flood model build in the background;
+        from the disk cache this takes seconds, from scratch a few minutes.
+  \item \textbf{Scaling}: each storm is computed once and shared by every user; the
+        stateless API can run behind a load balancer with a shared cache directory.
+\end{itemize}
+
+% =====================================================================
+\section{Limitations and roadmap}
+
+Stated plainly, because the system is meant for real use.
+\begin{longtable}{@{}p{6.4cm}p{8.0cm}@{}}
+\toprule
+\textbf{Limitation today} & \textbf{Upgrade path}\\
+\midrule\endhead
+Drain water level not solved: no pressure head or backwater from a full drain below & 1D dynamic-wave solver (SWMM-class) in place of capacity routing\\
+Tide and river stage at outfalls not modelled & Couple Ennore / Adyar mouth tide gauges as boundary levels\\
+30~m terrain: depth of the hollow, not the kerb & LiDAR or drone DSM (replaces the terrain files only)\\
+One 60~m catchment strip and 30~m inlet spacing for all drains & GCC sub-catchment polygons and gully positions\\
+Rainfall 15-minute, about 10~km grid & IMD Doppler radar nowcast at 5 minutes\\
+Roads treated as two-way & Add OSM \texttt{oneway} tags (right for commuters)\\
+Drain sizes outside the 92 ward maps unverified & Extend ward-map digitisation to the remaining wards\\
+Unexplained 2.87~m constant between sheet levels and DEM & Settle from GCC benchmark records\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\section*{References}
+\addcontentsline{toc}{section}{References}
+\begin{enumerate}[label={[\arabic*]},leftmargin=2em]
+  \item R.~Manning, ``On the flow of water in open channels and pipes,''
+        \emph{Trans.\ Inst.\ Civil Engineers of Ireland}, 1891.
+  \item FHWA, \emph{Urban Drainage Design Manual}, Hydraulic Engineering Circular
+        No.~22 (HEC-22), 3rd ed., 2009.
+  \item G.~R.~Villemonte, ``Submerged weir discharge studies,''
+        \emph{Engineering News-Record}, 1947.
+  \item Environment Agency (UK), Rapid Flood Spreading Method (RFSM) for flood risk
+        assessment.
+  \item Indian Roads Congress, IRC:SP:50, \emph{Guidelines on Urban Drainage}.
+  \item CPHEEO, \emph{Manual on Storm Water Drainage Systems}, MoHUA, Government of
+        India, 2019.
+  \item S.~Coles, \emph{An Introduction to Statistical Modeling of Extreme Values},
+        Springer, 2001.
+  \item E.~W.~Dijkstra, ``A note on two problems in connexion with graphs,''
+        \emph{Numerische Mathematik}, 1959.
+  \item P.~E.~Hart, N.~J.~Nilsson, B.~Raphael, ``A formal basis for the heuristic
+        determination of minimum cost paths,'' \emph{IEEE Trans.\ SSC}, 1968.
+  \item P.~Soille, \emph{Morphological Image Analysis}, Springer, 2003
+        ($h$-minima, watershed).
+  \item Greater Chennai Corporation / SECON-JBA, storm water drain ward base maps, 2020.
+  \item OpenStreetMap contributors; Open-Meteo; OpenTopography (GEDTM30, COP30).
+\end{enumerate}
+
+\end{document}

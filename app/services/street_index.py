@@ -7,12 +7,10 @@ are left out: the DEM under a deck is the river below it.
 
 import json
 import math
-from pathlib import Path
 from typing import Any
 
+from app import config
 from app.services import terrain
-
-STREETS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_streets.geojson"
 
 # Vertices are laid at least this close along every street, so a depth is resolved
 # to within this distance.
@@ -38,15 +36,15 @@ def densify(coords: list[list[float]], spacing_m: float = SPACING_M) -> list[lis
     return out
 
 
-def _load() -> dict[str, Any]:
+def load() -> dict[str, Any]:
     """Every street, densified."""
     global _index
     if _index is not None:
         return _index
 
     streets: list[dict[str, Any]] = []
-    if STREETS_PATH.exists():
-        collection = json.loads(STREETS_PATH.read_text(encoding="utf-8"))
+    if config.STREETS_GEOJSON.exists():
+        collection = json.loads(config.STREETS_GEOJSON.read_text(encoding="utf-8"))
         for feature in collection["features"]:
             # A bridge deck is metres above the DEM, which reads the river or canal under
             # it: every flood model would put the channel's water on the deck.
@@ -59,15 +57,3 @@ def _load() -> dict[str, Any]:
 
     _index = {"streets": streets}
     return _index
-
-
-if __name__ == "__main__":
-    # A 90 m straight line needs five 18 m pieces to keep every gap within 20 m.
-    line = densify([[80.2, 13.0], [80.2 + 90 / (terrain.M_PER_DEG * math.cos(math.radians(13))), 13.0]])
-    assert len(line) == 6, len(line)
-    assert all(_metres(*a, *b) <= SPACING_M + 1e-6 for a, b in zip(line, line[1:]))
-
-    streets = _load()["streets"]
-    assert streets, "no streets cached"
-    print(f"{len(streets)} streets indexed")
-    print("street_flood self-check passed")

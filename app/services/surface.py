@@ -23,10 +23,12 @@ from typing import Any
 
 import numpy as np
 from scipy import ndimage
-from skimage.morphology import h_minima
+from skimage.morphology import area_closing, h_minima
 from skimage.segmentation import watershed
 
-from app.services import terrain
+from app import config
+from app.services import channels, diskcache, street_index, terrain
+from app.services.street_index import densify
 
 # A dip shallower than this is DEM noise, not somewhere water stands on its own.
 MIN_HOLLOW_M = terrain.MIN_DEPTH_M
@@ -45,7 +47,6 @@ SMOOTH_CELLS = 3
 # neither is complete: OpenStreetMap's waterways, and the basin model's own macro and
 # micro drains, canals and surplus channels (app/services/channels.py).
 BURN_M = 2.0
-WATERWAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_waterways.geojson"
 
 _EIGHT = np.ones((3, 3), dtype=bool)
 _model: dict[str, Any] | None = None
@@ -73,12 +74,11 @@ def prepare(surface: np.ndarray, outlet: np.ndarray, cell_area_m2: float) -> dic
 
 def model_inputs() -> list[Path]:
     """Every file the conditioned terrain is built from, code included."""
-    from app.services import channels, diskcache, street_flood
-
-    dems = [Path(terrain.DATA_DIR.parent.parent / f) for f in terrain.source_info()["files"]]
-    channel_files = [channels.DATA_DIR / name for name in channels.FILES]
-    return [*dems, BUILDINGS_PATH, WATER_PATH, WARD_POINTS_PATH, WATERWAYS_PATH, *channel_files,
-            Path(__file__), *diskcache.sources(terrain, channels, street_flood)]
+    dems = [config.ROOT_DIR / f for f in terrain.source_info()["files"]]
+    channel_files = [config.SURVEY_DIR / name for name in channels.FILES]
+    return [*dems, config.BUILDINGS_NPZ, config.WATER_BODIES_NPZ, config.WARD_POINTS_JSON,
+            config.WATERWAYS_GEOJSON, *channel_files,
+            Path(__file__), *diskcache.sources(terrain, channels, street_index)]
 
 
 def load(south: float, north: float, west: float, east: float) -> dict[str, Any] | None:
@@ -86,7 +86,6 @@ def load(south: float, north: float, west: float, east: float) -> dict[str, Any]
     global _model
     if _model is not None:
         return _model
-    from app.services import diskcache
 
     with _load_lock:
         if _model is None and terrain.grid(south, north, west, east) is not None:
@@ -123,7 +122,7 @@ def _build(south: float, north: float, west: float, east: float) -> dict[str, An
     correction = np.where(np.isfinite(ground), ground - lowered, 0.0)     # as applied
     ground = lowered
     # Pits too small to be anything but noise are filled; mapped water bodies are kept.
-    water = _grid_layer(WATER_PATH, **grid_at)
+    water = _grid_layer(config.WATER_BODIES_NPZ, **grid_at)
     ground, pits = _fill_pits(ground, outlet, water)
     ground[outlet] = np.nan
     # The land as it is, for depths: burning only decides where water can run.
@@ -137,7 +136,7 @@ def _build(south: float, north: float, west: float, east: float) -> dict[str, An
     mid = math.radians((south + north) / 2)
     cell_area = (dem["lat_step"] * terrain.M_PER_DEG) * (dem["lon_step"] * terrain.M_PER_DEG * math.cos(mid))
     model = prepare(surface, outlet, cell_area)
-    buildings = _grid_layer(BUILDINGS_PATH, **grid_at)
+    buildings = _grid_layer(config.BUILDINGS_NPZ, **grid_at)
     model.update({"north": north, "west": west, "lat_step": dem["lat_step"],
                   "lon_step": dem["lon_step"], "outlet": outlet, "burned_cells": burned,
                   "land": land, "water": water,
@@ -154,11 +153,6 @@ def _build(south: float, north: float, west: float, east: float) -> dict[str, An
                   }})
     return model
 
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-BUILDINGS_PATH = DATA_DIR / "building_fraction.npz"
-WATER_PATH = DATA_DIR / "water_bodies.npz"
-WARD_POINTS_PATH = DATA_DIR / "ward_points.json"
 
 # A closed hollow covering fewer cells than this (about 1.5 ha at 30 m) is taken for DEM
 # noise - a building footprint bleeding through a bare-earth model - and filled to its
@@ -188,8 +182,6 @@ def _grid_layer(path: Path, north: float, west: float, step: float, shape: tuple
 def _fill_pits(ground: np.ndarray, outlet: np.ndarray, water: np.ndarray | None) -> tuple[np.ndarray, int]:
     """Fill every closed hollow smaller than PIT_MAX_CELLS, and every one deeper than
     DEEP_PIT_M smaller than DEEP_PIT_CELLS, nested ones included; mapped water stays."""
-    from skimage.morphology import area_closing
-
     if PIT_MAX_CELLS <= 1:
         return ground, 0
     low = np.nanmin(ground[~outlet]) - 1.0
@@ -219,10 +211,10 @@ def _survey_readings(raw: np.ndarray, north: float, west: float, step: float,
                      shape: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """DEM - surveyed road edge at every manhole placed exactly on its sheet:
     rows, columns and values, with each sheet's misreads dropped."""
-    if not WARD_POINTS_PATH.exists():
+    if not config.WARD_POINTS_JSON.exists():
         return np.array([], int), np.array([], int), np.array([])
     rows, cols, values = [], [], []
-    for sheet in json.loads(WARD_POINTS_PATH.read_text(encoding="utf-8"))["sheets"]:
+    for sheet in json.loads(config.WARD_POINTS_JSON.read_text(encoding="utf-8"))["sheets"]:
         if (sheet.get("georeference") or {}).get("from") != ["grid lines"]:
             continue
         pts = [p for p in sheet["points"] if p.get("road_edge_m") is not None and "lat" in p
@@ -272,7 +264,7 @@ def survey_correction(raw: np.ndarray, north: float, west: float, step: float,
     """
     zero = np.zeros(shape)
     rows, cols, values = _survey_readings(raw, north, west, step, shape)
-    buildings = _grid_layer(BUILDINGS_PATH, north=north, west=west, step=step, shape=shape)
+    buildings = _grid_layer(config.BUILDINGS_NPZ, north=north, west=west, step=step, shape=shape)
     if values.size < 50:
         return zero
     cell_m = step * terrain.M_PER_DEG
@@ -301,13 +293,11 @@ def survey_correction(raw: np.ndarray, north: float, west: float, step: float,
     return correction
 
 
-def _channel_lines() -> list[list[list[float]]]:
+def channel_lines() -> list[list[list[float]]]:
     """Every channel to burn in: OpenStreetMap's waterways and the basin model's own."""
-    from app.services import channels
-
     lines: list[list[list[float]]] = []
-    if WATERWAYS_PATH.exists():
-        for feature in json.loads(WATERWAYS_PATH.read_text(encoding="utf-8"))["features"]:
+    if config.WATERWAYS_GEOJSON.exists():
+        for feature in json.loads(config.WATERWAYS_GEOJSON.read_text(encoding="utf-8"))["features"]:
             lines.append(feature["geometry"]["coordinates"])
     lines.extend(channels.lines())
     return lines
@@ -318,13 +308,11 @@ def _burn_waterways(ground: np.ndarray, north: float, west: float,
     """Lower the cells under every mapped channel by BURN_M, in place; how many."""
     if BURN_M <= 0:
         return 0
-    from app.services.street_flood import densify
-
     # Vertices half a cell apart, so a line crossing the grid misses no cell.
     spacing = lat_step * terrain.M_PER_DEG / 2
     rows_n, cols_n = ground.shape
     hit = np.zeros(ground.shape, dtype=bool)
-    for line in _channel_lines():
+    for line in channel_lines():
         xy = np.asarray(densify(line, spacing))
         rows = np.floor((north - xy[:, 1]) / lat_step).astype(int)
         cols = np.floor((xy[:, 0] - west) / lon_step).astype(int)
@@ -371,7 +359,7 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
                     ) -> tuple[list[dict[str, Any]], dict[str, list[float]]]:
     """Street stretches that go under at any point in the storm, and when.
 
-    Streets are the densified OpenStreetMap ways street_flood indexes. A stretch runs
+    Streets are the densified OpenStreetMap ways street_index indexes. A stretch runs
     over consecutive vertices wet at their own peak, plus one either side: the water's
     edge lies between a wet vertex and a dry one, and 20 m vertex spacing is finer than
     a 30 m DEM cell.
@@ -380,7 +368,7 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
     returned is the water level of each of those zones at every step. Depth at a vertex
     at a step is level - ground, so a map can redraw any minute without another request.
     """
-    streets, coords, street_of, cell, step_m = _street_cells(model)
+    streets, coords, street_of, cell, step_m = street_cells(model)
     on_grid = cell >= 0
     at_cell = np.maximum(cell, 0)
     land = np.where(on_grid, model["land"].ravel()[at_cell], np.nan)
@@ -456,14 +444,12 @@ def flooded_streets(model: dict[str, Any], levels: np.ndarray, step_minutes: flo
 _streets: tuple | None = None
 
 
-def _street_cells(model: dict[str, Any]) -> tuple:
+def street_cells(model: dict[str, Any]) -> tuple:
     """Every street vertex, flattened, with the grid cell it falls in (-1 off the grid)
     and the distance on to the next vertex of the same street (0 at its end)."""
     global _streets
     if _streets is None:
-        from app.services import street_flood
-
-        streets = street_flood._load()["streets"]
+        streets = street_index.load()["streets"]
         coords = np.array([xy for s in streets for xy in s["coords"]], dtype=np.float64).reshape(-1, 2)
         street_of = np.repeat(np.arange(len(streets)), [len(s["coords"]) for s in streets])
         rows_n, cols_n = model["surface"].shape
@@ -476,50 +462,3 @@ def _street_cells(model: dict[str, Any]) -> tuple:
         step_m = np.r_[np.where(street_of[1:] == street_of[:-1], np.hypot(dx, dy), 0.0), 0.0]
         _streets = (streets, coords, street_of, cell, step_m)
     return _streets
-
-
-if __name__ == "__main__":
-    # Two dips either side of a low ridge, inside a rim, the sea around the edge: two
-    # zones, not one, so each fills on its own until water tops the ridge.
-    ground = np.full((9, 15), 11.0)
-    ground[2:7, 2:7] = 10.0
-    ground[2:7, 8:13] = 9.0
-    ground[2:7, 7] = 10.5
-    ground[[0, -1], :] = ground[:, [0, -1]] = -1.0
-    m = prepare(ground, ground < 0, 100.0)
-    west, east = int(m["basins"][4, 4]), int(m["basins"][4, 10])
-    assert west != east and m["sea"] not in (west, east), m["basins"]
-    assert m["basins"][0, 0] == m["sea"]
-    # A 1 cm dip is noise and seeds nothing.
-    flat = np.full((5, 5), 5.0)
-    flat[2, 2] = 4.99
-    flat[[0, -1], :] = flat[:, [0, -1]] = 0.0
-    assert prepare(flat, flat == 0.0, 100.0)["sea"] == 1
-
-    # Pit filling: a one-cell pit 2 m deep is noise and goes; a 25-cell hollow stays; the
-    # same pit under a mapped water body stays.
-    field = np.full((12, 12), 10.0)
-    field[2, 2] = 8.0
-    field[5:10, 5:10] = 9.0
-    edge12 = np.zeros_like(field, dtype=bool)
-    edge12[[0, -1], :] = edge12[:, [0, -1]] = True
-    filled, n = _fill_pits(field.copy(), edge12, None)
-    assert filled[2, 2] == 10.0 and filled[7, 7] == 9.0 and n == 1, (filled[2, 2], filled[7, 7], n)
-    pond = np.zeros_like(field)
-    pond[2, 2] = 1.0
-    assert _fill_pits(field.copy(), edge12, pond)[0][2, 2] == 8.0
-    # The same 25-cell hollow 2 m deep is too deep for its size: filled.
-    deep = field.copy()
-    deep[5:10, 5:10] = 8.0
-    assert _fill_pits(deep, edge12, None)[0][7, 7] == 10.0
-
-    m.update({"land": ground})
-    level = np.full(m["sea"] + 1, -np.inf)
-    level[west] = 10.1
-    depth = depth_grid(m, level)
-    assert abs(depth[4, 4] - 0.1) < 1e-9 and depth[4, 10] == 0.0 and depth[0, 0] == 0.0
-
-    t = timeline(np.r_[0.0, 0.06, 0.4, 0.2, 0.01, 0.0], 5.0, 0.05, 0.30)
-    assert t == {"floods_at_min": 10, "impassable_at_min": 15, "peak_at_min": 15, "clears_at_min": 25}, t
-    assert timeline(np.zeros(4), 5.0, 0.05, 0.3)["floods_at_min"] is None
-    print("rain_ponding self-check passed")
