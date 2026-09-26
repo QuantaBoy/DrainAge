@@ -1,8 +1,8 @@
 """Download a DEM for Chennai from OpenTopography's Global DEM API.
 
-    python fetch_dem.py                       # COP30 over Chennai -> app/data/dem/COP30.tif
-    python fetch_dem.py --demtype GEDTM30     # a bare-earth terrain model instead
-    python fetch_dem.py --demtype NASADEM --bbox 12.85 13.25 80.10 80.35
+    python scripts/fetch_dem.py                       # COP30 over Chennai -> app/data/dem/COP30.tif
+    python scripts/fetch_dem.py --demtype GEDTM30     # a bare-earth terrain model instead
+    python scripts/fetch_dem.py --demtype NASADEM --bbox 12.85 13.25 80.10 80.35
 
 The key is read from OPENTOPOGRAPHY_API_KEY in .env (see .env.example). It is never
 printed: the API takes it as a query parameter, so a URL in an error message would
@@ -20,7 +20,7 @@ from typing import NoReturn
 import httpx
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "app" / "data" / "dem"
 API = "https://portal.opentopography.org/API/globaldem"
 
@@ -29,7 +29,7 @@ API = "https://portal.opentopography.org/API/globaldem"
 # terrain model; the others are for comparison.
 DEMTYPES = ("COP30", "GEDTM30", "NASADEM", "AW3D30", "SRTMGL1", "COP90")
 
-# Same box as the street layer (app/routes/streets.py), south, north, west, east, plus
+# Same box as the street layer (app/config.py), south, north, west, east, plus
 # a margin so the ponding window around a manhole at the edge is not cut off.
 CHENNAI = (12.85, 13.25, 80.10, 80.35)
 MARGIN_DEG = 0.02

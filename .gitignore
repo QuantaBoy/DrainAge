@@ -15,3 +15,5 @@ app/data/*
 # OCR cache from digitise_wards.py
 .ward_ocr/
 .osm_buildings/
+
+.pytest_cache/

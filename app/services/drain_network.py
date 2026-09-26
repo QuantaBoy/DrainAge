@@ -1,36 +1,32 @@
-"""Storm water drains: GCC drain network from CSV, served as GeoJSON.
+"""The storm water drain network: the GCC survey and the ward maps, merged into one graph.
 
-The CSV contains 10 000+ drain segments with WKT LineString geometries and
-rich metadata (zone, ward, type, status, dimensions, material, obstacles).
-Data is parsed once on first request and cached in memory.
+Two surveys describe Chennai's drains. The GCC storm water drain survey (a CSV of
+10,240 drains) covers the whole city but records almost every section as square; the
+SECON-JBA ward maps (Ward/*.pdf, read by scripts/digitise_wards.py) draw 92 wards
+manhole by manhole with measured sections and levels. Where a ward map draws a drain,
+its drain replaces the CSV's and borrows the CSV's condition, material and name.
 
-On top of the survey, each drain gets its hydraulic capacity (what the built
-section can carry) and the catchment that reaches it through the network; with a
-rainfall figure those become the hydrodynamic state of the drain right now. The
-physics lives in app/services/hydraulics.py.
+Each drain then gets its hydraulic capacity (app/services/hydraulics.py) and the
+catchment that reaches it through the network, and the whole network becomes the
+directed graph the flood model routes water through. Building it takes a minute, so
+the result is kept on disk (app/services/diskcache.py) until an input changes.
 """
 
-import asyncio
 import csv
 import json
+import math
 import re
+import statistics
 import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+import numpy as np
+from scipy.spatial import cKDTree
 
-from app.services import hydraulics
-
-router = APIRouter(prefix="/data-collection", tags=["Drains"])
-
-CSV_PATH = (Path(__file__).resolve().parent.parent.parent
-            / "Cross-Checked Data" / "gcc_storm_water_drains (1).csv")
-# Ward and zone as printed on the GCC base-map sheets in Ward/, extracted from their
-# title blocks, which the CSV's own ward and zone codes are checked against. The sheets
-# are a separate survey from the CSV (SECON-JBA, Dec 2020): at the same manholes their
-# inverts differ by a median 0.63 m and their sections are not square.
-SHEETS_PATH = Path(__file__).resolve().parent.parent / "data" / "ward_sheets.json"
+from app import config
+from app.services import diskcache, hydraulics
+from app.services.terrain import M_PER_DEG
 
 # Fields forwarded into each GeoJSON feature's properties.
 PROPERTY_FIELDS = [
@@ -68,24 +64,24 @@ PROVENANCE = {
     "depth, velocity, Froude": "Manning solved for normal depth at that inflow",
 }
 
-# Cached ward sheet index, read from SHEETS_PATH on first use.
+# Cached ward sheet index, read from config.WARD_SHEETS_JSON on first use.
 _sheets: dict[str, dict[str, Any]] | None = None
 
 
-def _ward_sheets() -> dict[str, dict[str, Any]]:
+def ward_sheets() -> dict[str, dict[str, Any]]:
     """The base-map sheet for each ward, keyed the way the CSV keys wards."""
     global _sheets
     if _sheets is None:
         try:
-            _sheets = json.loads(SHEETS_PATH.read_text(encoding="utf-8"))["sheets"]
+            _sheets = json.loads(config.WARD_SHEETS_JSON.read_text(encoding="utf-8"))["sheets"]
         except (OSError, ValueError, KeyError):
             _sheets = {}
     return _sheets
 
 
-def _sheet_note(ward: str, zone: str) -> dict[str, Any]:
+def sheet_note(ward: str, zone: str) -> dict[str, Any]:
     """What the base map says about this ward, and whether the CSV agrees with it."""
-    sheet = _ward_sheets().get(ward)
+    sheet = ward_sheets().get(ward)
     if not sheet:
         return {
             "sheet": None,
@@ -107,7 +103,7 @@ def _sheet_note(ward: str, zone: str) -> dict[str, Any]:
 
 # In-memory cache: one dict per drain, with its survey row, geometry, capacity and
 # the catchment area that reaches it through the network.
-_cache: list[dict[str, Any]] | None = None
+_drains: list[dict[str, Any]] | None = None
 
 
 def _parse_wkt_linestring(wkt: str) -> list[list[float]] | None:
@@ -141,31 +137,28 @@ _build_lock = threading.Lock()
 
 def network_inputs() -> list[Path]:
     """Every file the merged drain network is built from, code included."""
-    from app.services import diskcache
+    return [config.DRAIN_SURVEY_CSV, config.WARD_POINTS_JSON, config.WARD_SHEETS_JSON,
+            Path(__file__), *diskcache.sources(hydraulics)]
 
-    return [CSV_PATH, WARD_POINTS_PATH, SHEETS_PATH, Path(__file__), *diskcache.sources(hydraulics)]
 
-
-def _load_csv() -> list[dict[str, Any]]:
+def load_drains() -> list[dict[str, Any]]:
     """The drain network, built once: from disk if nothing it depends on has changed."""
-    global _cache
-    if _cache is not None:
-        return _cache
+    global _drains
+    if _drains is not None:
+        return _drains
     with _build_lock:
-        if _cache is None:
-            from app.services import diskcache
-
+        if _drains is None:
             drains, graph = diskcache.cached("drains", network_inputs(), _build)
             _graph.clear()
             _graph.update(graph)
-            _cache = drains
-    return _cache
+            _drains = drains
+    return _drains
 
 
 def _build() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Parse the CSV and the ward sheets, then work out capacities and catchments."""
     drains: list[dict[str, Any]] = []
-    with open(CSV_PATH, encoding="utf-8-sig", newline="") as fh:
+    with open(config.DRAIN_SURVEY_CSV, encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             wkt = row.get("wkt_geometry", "")
@@ -213,7 +206,6 @@ def _build() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return drains, dict(_graph)
 
 
-WARD_POINTS_PATH = Path(__file__).resolve().parent.parent / "data" / "ward_points.json"
 # A CSV drain is the same drain as the sheets' where this share of it lies within
 # SAME_DRAIN_M of a sheet drain; the survey is walked at SAMPLE_M.
 SAME_DRAIN_M = 20.0
@@ -229,19 +221,13 @@ FROM_SURVEY = ("STATUS", "SWD_MAT", "TYP_MAT", "OBSTACLES", "PUCA_KACHA", "ST_NA
 SHEET_FEATURE_BASE = 900_000
 
 
-def _metres_xy(coords: list[list[float]]) -> "np.ndarray":
-    import math
-
-    import numpy as np
-
+def _metres_xy(coords: list[list[float]]) -> np.ndarray:
     xy = np.asarray(coords, dtype=float)
-    return np.c_[xy[:, 0] * 111_320.0 * math.cos(math.radians(13.0)), xy[:, 1] * 111_320.0]
+    return np.c_[xy[:, 0] * M_PER_DEG * math.cos(math.radians(13.0)), xy[:, 1] * M_PER_DEG]
 
 
-def _samples(xy: "np.ndarray") -> "np.ndarray":
+def _samples(xy: np.ndarray) -> np.ndarray:
     """Points every SAMPLE_M along a line, both ends included."""
-    import numpy as np
-
     out = [xy[0]]
     for p, q in zip(xy[:-1], xy[1:]):
         steps = max(1, int(np.ceil(np.hypot(*(q - p)) / SAMPLE_M)))
@@ -260,16 +246,13 @@ def _sheet_drains(survey: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], s
     material and name from the survey drain it overlaps. A CSV drain lying along sheet
     drains for SAME_SHARE of its length is the same drain, measured better, and goes.
     """
-    import numpy as np
-    from scipy.spatial import cKDTree
-
-    if not WARD_POINTS_PATH.exists():
+    if not config.WARD_POINTS_JSON.exists():
         return [], set()
-    sheets = json.loads(WARD_POINTS_PATH.read_text(encoding="utf-8"))["sheets"]
-    zones = {f"N{int(s['ward']):03d}": s["zone"] for s in _ward_sheets().values()}
+    sheets = json.loads(config.WARD_POINTS_JSON.read_text(encoding="utf-8"))["sheets"]
+    zones = {f"N{int(s['ward']):03d}": s["zone"] for s in ward_sheets().values()}
 
     kept: list[dict[str, Any]] = []
-    kept_tree_pts: list["np.ndarray"] = []
+    kept_tree_pts: list[np.ndarray] = []
     for sheet in sheets:
         if (sheet.get("georeference") or {}).get("from") != ["grid lines"]:
             continue
@@ -358,25 +341,20 @@ def _close_gaps(drains: list[dict[str, Any]], node_ids: list[list[int]],
                 node_points: list[list[float]]) -> None:
     """Join every drain end nothing carries on from to the nearest other drain within
     GAP_M, in place, by giving the end that drain's junction."""
-    import math
-
-    import numpy as np
-    from scipy.spatial import cKDTree
-
-    carried = {n for nodes in node_ids for n in hydraulics._upstream_nodes({"nodes": nodes})}
+    carried = {n for nodes in node_ids for n in hydraulics.upstream_nodes({"nodes": nodes})}
     if not carried:
         return
     candidates = np.array(sorted(carried))
-    scale = 111_320.0 * math.cos(math.radians(13.0))
+    scale = M_PER_DEG * math.cos(math.radians(13.0))
     xy = np.asarray(node_points, dtype=float)
-    tree = cKDTree(np.c_[xy[candidates, 0] * scale, xy[candidates, 1] * 111_320.0])
+    tree = cKDTree(np.c_[xy[candidates, 0] * scale, xy[candidates, 1] * M_PER_DEG])
     for drain, nodes in zip(drains, node_ids):
         end = nodes[-1]
         drain["gap_joined_m"] = None
         if end in carried:
             continue
         own = set(nodes)
-        dist, idx = tree.query([xy[end, 0] * scale, xy[end, 1] * 111_320.0], k=6,
+        dist, idx = tree.query([xy[end, 0] * scale, xy[end, 1] * M_PER_DEG], k=6,
                                distance_upper_bound=GAP_M)
         for d, i in zip(np.atleast_1d(dist), np.atleast_1d(idx)):
             if np.isfinite(d) and int(candidates[i]) not in own:
@@ -393,8 +371,6 @@ def _typical_section_for_unsized(drains: list[dict[str, Any]]) -> None:
     own catchment gives 0.5. The typical section is the median of the ward sheets'
     measured ones, the best-grounded size a drain nobody measured can be given.
     """
-    import statistics
-
     def size(props: dict[str, Any], key: str) -> float | None:
         value = props.get(key)
         return value if isinstance(value, float) and value > 0 else None
@@ -461,7 +437,7 @@ def _accumulate_network(drains: list[dict[str, Any]]) -> None:
     for drain, below in zip(drains, graph["downstream"]):
         drain["is_outfall"] = below is None
 
-    # Kept for routing rain through the network step by step (flood.py): the same
+    # Kept for routing rain through the network step by step (app/services/forecast.py): the same
     # graph, so the flood nowcast and the catchments can never disagree about it.
     _graph.clear()
     _graph.update({"edges": edges, "graph": graph, "points": node_points})
@@ -474,7 +450,7 @@ _graph: dict[str, Any] = {}
 
 def drain_graph() -> dict[str, Any]:
     """The network the drains are loaded into, built on first use."""
-    _load_csv()
+    load_drains()
     return _graph
 
 
@@ -492,7 +468,7 @@ def flow_direction(invert_start: Any, invert_end: Any) -> str:
     return "forward" if invert_start > invert_end else "reverse"
 
 
-def _catchment(drain: dict[str, Any], strip_m: float) -> float:
+def catchment_for(drain: dict[str, Any], strip_m: float) -> float:
     """Catchment reaching this drain for a given strip width.
 
     Accumulation is linear in the strip each drain collects from, so the network is
@@ -502,85 +478,65 @@ def _catchment(drain: dict[str, Any], strip_m: float) -> float:
     return drain["catchment_m2"] * strip_m / hydraulics.STRIP_WIDTH_M
 
 
-def _matches(props: dict[str, Any], wanted: dict[str, str | None]) -> bool:
+def matches(props: dict[str, Any], wanted: dict[str, str | None]) -> bool:
     return all(props.get(field) == value for field, value in wanted.items() if value)
 
 
-def _unique_values(field: str, drains: list[dict[str, Any]]) -> list[str]:
+def unique_values(field: str, drains: list[dict[str, Any]]) -> list[str]:
     """Sorted unique non-empty values for a property field."""
     return sorted({d["props"][field] for d in drains if d["props"].get(field)})
 
 
-@router.get("/drains", summary="GCC storm water drains as GeoJSON")
-async def get_drains(
-    zone: str | None = Query(None, description="Filter by zone, e.g. N07"),
-    ward: str | None = Query(None, description="Filter by ward, e.g. N082"),
-    drain_type: str | None = Query(None, description="Filter by DRAIN_TYPE"),
-    status: str | None = Query(None, description="Filter by STATUS"),
-    strip_m: float = Query(hydraulics.STRIP_WIDTH_M, ge=1, le=500,
-                           description="Catchment strip each drain collects from, m"),
-) -> dict[str, Any]:
-    all_drains = await asyncio.to_thread(_load_csv)
-    wanted = {"ZONE": zone, "WARD": ward, "DRAIN_TYPE": drain_type, "STATUS": status}
+# ─── Queries ─────────────────────────────────────────────────────────────────────
 
+_by_feature: dict[int, dict[str, Any]] = {}
+
+
+def drain_by_feature(feature_no: int) -> dict[str, Any] | None:
+    """One drain by its feature number, from an index built on first use."""
+    if not _by_feature:
+        _by_feature.update({int(d["props"]["feature_no"]): d for d in load_drains()
+                            if isinstance(d["props"].get("feature_no"), float)})
+    return _by_feature.get(int(feature_no))
+
+
+def drain_features(filters: dict[str, str | None], strip_m: float) -> list[dict[str, Any]]:
+    """The drains matching `filters`, as GeoJSON features with their hydraulics."""
     features = []
-    for drain in all_drains:
+    for drain in load_drains():
         props, capacity = drain["props"], drain["capacity"]
-        if not _matches(props, wanted):
+        if not matches(props, filters):
             continue
         features.append({
             "type": "Feature",
-            # Coordinates run the way the water runs; the CSV's start/end stay in
-            # INVERT_SP/INVERT_EP.
+            # Coordinates run the way the water runs; the survey's own start and end
+            # stay in INVERT_SP / INVERT_EP.
             "geometry": {
                 "type": "LineString",
-                "coordinates": drain["coords"][::-1] if drain["flow"] == "reverse"
-                else drain["coords"],
+                "coordinates": drain["coords"][::-1] if drain["flow"] == "reverse" else drain["coords"],
             },
             "properties": {
                 **props,
                 "FLOW": drain["flow"],
-                # Enough hydraulics for the page to colour and size live load without
-                # asking again; the full picture is in /drain-hydraulics.
+                # Enough hydraulics for the page to colour live load without asking again.
                 "Q_CAP": capacity["effective_capacity_m3s"],
                 "Q_BUILT": capacity["capacity_m3s"],
                 "V_FULL": capacity["full_velocity_ms"],
                 "SLOPE": capacity["slope"],
-                "CATCH_M2": round(_catchment(drain, strip_m), 1),
+                "CATCH_M2": round(catchment_for(drain, strip_m), 1),
                 "OWN_M2": round(drain["length_m"] * strip_m, 1),
             },
         })
-
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-        "total": len(features),
-        # So the page computes inflow exactly the way the server does.
-        "runoff_coefficient": hydraulics.RUNOFF_COEFF,
-        "strip_m": strip_m,
-    }
+    return features
 
 
-@router.get("/drain-hydraulics", summary="Capacity and live state of one drain")
-async def get_drain_hydraulics(
-    feature_no: int = Query(..., description="feature_no of the drain"),
-    rain_mm_h: float = Query(0.0, ge=0, le=500, description="Rainfall intensity, mm/h"),
-    strip_m: float = Query(hydraulics.STRIP_WIDTH_M, ge=1, le=500,
-                           description="Catchment strip each drain collects from, m"),
-    runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1,
-                                description="Rational-method runoff coefficient"),
-) -> dict[str, Any]:
-    all_drains = await asyncio.to_thread(_load_csv)
-    for drain in all_drains:
-        if drain["props"].get("feature_no") == float(feature_no):
-            break
-    else:
-        raise HTTPException(status_code=404, detail=f"No drain with feature_no {feature_no}")
-
+def drain_report(drain: dict[str, Any], rain_mm_h: float, strip_m: float,
+                 runoff_coeff: float) -> dict[str, Any]:
+    """Everything about one drain: the survey, its capacity, and its state in this rain."""
     props = drain["props"]
     return {
         "drain": {
-            "feature_no": feature_no,
+            "feature_no": int(props["feature_no"]),
             "street": props.get("ST_NAME"),
             "location": props.get("LOCATION"),
             "ward": props.get("WARD"),
@@ -593,67 +549,57 @@ async def get_drain_hydraulics(
             "invert_start_m": props.get("INVERT_SP"),
             "invert_end_m": props.get("INVERT_EP"),
             "flow": drain["flow"],
-            "base_map": _sheet_note(props.get("WARD", ""), props.get("ZONE", "")),
+            "base_map": sheet_note(props.get("WARD", ""), props.get("ZONE", "")),
         },
         "capacity": drain["capacity"],
-        "state": hydraulics.drain_state(drain["capacity"], _catchment(drain, strip_m),
+        "state": hydraulics.drain_state(drain["capacity"], catchment_for(drain, strip_m),
                                         rain_mm_h, drain["length_m"], runoff_coeff),
-        # Nothing here is a black box: every number is either surveyed, derived from
-        # surveyed values, or an assumption with its value on show.
+        # Nothing here is a black box: every number is surveyed, derived from surveyed
+        # values, or an assumption with its value on show.
         "provenance": PROVENANCE,
     }
 
 
-@router.get("/network-summary", summary="Live load across the selected drain network")
-async def get_network_summary(
-    rain_mm_h: float = Query(0.0, ge=0, le=500, description="Rainfall intensity, mm/h"),
-    zone: str | None = Query(None),
-    ward: str | None = Query(None),
-    strip_m: float = Query(hydraulics.STRIP_WIDTH_M, ge=1, le=500,
-                           description="Catchment strip each drain collects from, m"),
-    runoff_coeff: float = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1,
-                                description="Rational-method runoff coefficient"),
-    worst: int = Query(5, ge=0, le=50, description="How many overloaded drains to name"),
-) -> dict[str, Any]:
-    """What the whole selection is doing at this rainfall.
+def network_summary(filters: dict[str, str | None], rain_mm_h: float, strip_m: float,
+                    runoff_coeff: float, worst: int) -> dict[str, Any]:
+    """What the selected drains are doing at this rainfall.
 
-    The capacities are summed for scale, not as a network capacity: the drains are in
-    series as well as in parallel, so the network can only ever pass what its tightest
-    downstream section passes.
+    Load is each drain's demand - the runoff of everything upstream of it - against
+    its capacity, which is what the map colours. Spill is routed: a drain passes on
+    only what it can carry, so water a drain upstream has already put on the street is
+    not counted again at every drain below it.
     """
-    all_drains = await asyncio.to_thread(_load_csv)
-    wanted = {"ZONE": zone, "WARD": ward}
+    drains = load_drains()
+    graph = drain_graph()["graph"]
+    local = [hydraulics.rational_inflow(d["length_m"] * strip_m, rain_mm_h, runoff_coeff) for d in drains]
+    capacity = [d["capacity"]["effective_capacity_m3s"] for d in drains]
+    _, spill = hydraulics.steady_route(local, capacity, graph)
 
     bands: dict[str, int] = {}
-    totals = {"drains": 0, "length_m": 0.0, "capacity_m3s": 0.0,
-              "effective_m3s": 0.0, "catchment_m2": 0.0, "inflow_m3s": 0.0}
+    totals = {"drains": 0, "length_m": 0.0, "capacity_m3s": 0.0, "effective_m3s": 0.0,
+              "catchment_m2": 0.0, "spill_m3s": 0.0}
     loaded: list[tuple[float, dict[str, Any]]] = []
     unsized = 0
-
-    for drain in all_drains:
-        props, capacity = drain["props"], drain["capacity"]
-        if not _matches(props, wanted):
+    for i, drain in enumerate(drains):
+        props, cap = drain["props"], drain["capacity"]
+        if not matches(props, filters):
             continue
-        catchment = _catchment(drain, strip_m)
-        inflow = hydraulics.rational_inflow(catchment, rain_mm_h, runoff_coeff)
-        effective = capacity["effective_capacity_m3s"]
-
+        catchment = catchment_for(drain, strip_m)
+        demand = hydraulics.rational_inflow(catchment, rain_mm_h, runoff_coeff)
+        effective = cap["effective_capacity_m3s"]
         totals["drains"] += 1
         totals["length_m"] += drain["length_m"]
-        totals["capacity_m3s"] += capacity["capacity_m3s"]
+        totals["capacity_m3s"] += cap["capacity_m3s"]
         totals["effective_m3s"] += effective
         totals["catchment_m2"] += catchment
-        totals["inflow_m3s"] += inflow
-
-        # A drain the survey left without a size has no capacity to compare against.
-        # It is reported as a gap in the data, not as an overloaded drain, so it
-        # cannot crowd the real findings out of the worst list.
+        totals["spill_m3s"] += spill[i]
+        # A drain with no size has nothing to compare against: a gap in the data, not
+        # an overloaded drain, so it cannot crowd the real findings out of the list.
         if effective <= 0:
             unsized += 1
             bands["unsized"] = bands.get("unsized", 0) + 1
             continue
-
-        ratio = inflow / effective
+        ratio = demand / effective
         band = hydraulics.load_band(ratio)
         bands[band] = bands.get(band, 0) + 1
         if ratio >= 1.0:
@@ -664,90 +610,41 @@ async def get_network_summary(
                 "zone": props.get("ZONE"),
                 "status": props.get("STATUS"),
                 "load_pct": round(ratio * 100, 1),
-                "inflow_m3s": round(inflow, 3),
+                "inflow_m3s": round(demand, 3),
                 "effective_capacity_m3s": effective,
-                "spill_m3s": round(inflow - effective, 3),
+                "spill_m3s": round(spill[i], 3),
             }))
-
     loaded.sort(key=lambda item: item[0], reverse=True)
     return {
         "rain_mm_h": rain_mm_h,
         "runoff_coefficient": runoff_coeff,
         "strip_m": strip_m,
-        "filters": {"zone": zone, "ward": ward},
+        "filters": {field.lower(): value for field, value in filters.items()},
         "drains": totals["drains"],
         "length_km": round(totals["length_m"] / 1000, 2),
         "catchment_km2": round(totals["catchment_m2"] / 1e6, 3),
         "built_capacity_m3s": round(totals["capacity_m3s"], 1),
         "effective_capacity_m3s": round(totals["effective_m3s"], 1),
-        "inflow_m3s": round(totals["inflow_m3s"], 2),
+        "inflow_m3s": round(sum(hydraulics.rational_inflow(d["length_m"] * strip_m, rain_mm_h, runoff_coeff)
+                                for d in drains if matches(d["props"], filters)), 2),
         "bands": bands,
         "overloaded": len(loaded),
         "unsized": unsized,
-        # What the overloaded drains together put onto the street.
-        "spill_m3s": round(sum(item[1]["spill_m3s"] for item in loaded), 2),
+        "spill_m3s": round(totals["spill_m3s"], 2),
         "worst": [item[1] for item in loaded[:worst]],
     }
 
 
-@router.get("/drain-filters", summary="Available filter values for drains")
-async def get_drain_filters(
-    zone: str | None = Query(None),
-) -> dict[str, Any]:
-    """Return the unique values for each filter dropdown.
-
-    When a zone is selected, ward values are scoped to that zone so the
-    ward dropdown only shows wards that exist in the chosen zone.
-    """
-    # Off the event loop: on a cold start the network takes a minute to build, and the
-    # page asks for these the moment it opens.
-    all_drains = await asyncio.to_thread(_load_csv)
-
-    scoped = all_drains
-    if zone:
-        scoped = [d for d in scoped if d["props"].get("ZONE") == zone]
-
+def filter_options(zone: str | None) -> dict[str, Any]:
+    """The values each drain filter can take; wards scoped to `zone` when one is given."""
+    drains = load_drains()
+    scoped = [d for d in drains if d["props"].get("ZONE") == zone] if zone else drains
     return {
-        "zones": _unique_values("ZONE", all_drains),
-        "wards": _unique_values("WARD", scoped),
-        "drain_types": _unique_values("DRAIN_TYPE", all_drains),
-        "statuses": _unique_values("STATUS", all_drains),
-        # Which wards the GCC base maps in Ward/ cover, so the page can say whether a
-        # ward's drains have a drawing behind them or only the survey row.
-        "ward_sheets": _ward_sheets(),
+        "zones": unique_values("ZONE", drains),
+        "wards": unique_values("WARD", scoped),
+        "drain_types": unique_values("DRAIN_TYPE", drains),
+        "statuses": unique_values("STATUS", drains),
+        # Which wards have a ward map, so the page can say whether a ward's drains have
+        # a drawing behind them or only the survey row.
+        "ward_sheets": ward_sheets(),
     }
-
-
-if __name__ == "__main__":
-    assert flow_direction(13.096, 12.676) == "forward"
-    assert flow_direction(11.692, 14.054) == "reverse"
-    assert flow_direction(12.0, 12.0) == "unknown"
-    assert flow_direction("", 12.0) == "unknown"
-    assert flow_direction(104860.0, 12.0) == "unknown"
-
-    from collections import Counter
-    drains = _load_csv()
-    counts = Counter(d["flow"] for d in drains)
-    print("drain flow from invert levels:", dict(counts))
-
-    # Every drain must end up with a catchment at least as large as its own strip,
-    # and the network must move runoff downstream, not create or lose it.
-    assert all(d["catchment_m2"] >= d["capacity"]["catchment_strip_m2"] - 1e-6 for d in drains)
-    own = sum(d["capacity"]["catchment_strip_m2"] for d in drains)
-    print(f"catchment: {own / 1e6:.1f} km² surveyed strip, "
-          f"largest accumulated {max(d['catchment_m2'] for d in drains) / 1e6:.2f} km²")
-
-    sized = [d for d in drains if d["capacity"]["capacity_m3s"] > 0]
-    print(f"capacity: {len(sized)} drains sized, "
-          f"median {sorted(d['capacity']['capacity_m3s'] for d in sized)[len(sized) // 2]:.3f} m³/s, "
-          f"total {sum(d['capacity']['capacity_m3s'] for d in sized):.0f} m³/s")
-
-    # A heavy Chennai hour: 50 mm/h is a red-alert rate, and the network should show
-    # real distress at it but not at drizzle.
-    for rain in (2.5, 50.0):
-        over = sum(
-            1 for d in drains
-            if hydraulics.rational_inflow(d["catchment_m2"], rain)
-            > d["capacity"]["effective_capacity_m3s"] > 0
-        )
-        print(f"at {rain:>5} mm/h: {over} drains over capacity")

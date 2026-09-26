@@ -4,7 +4,7 @@ Rain falls on the ground. Part of it runs off (the runoff coefficient), and wher
 runs is decided by the terrain and the drains together, every minute of the storm:
 
   surface (2D)   the city is cut into storage zones, one per DEM depression and the
-                 ground that drains into it (rain_ponding.prepare). A zone holds water
+                 ground that drains into it (surface.prepare). A zone holds water
                  at one level, from its own fill curve. Neighbouring zones exchange
                  water over the cell faces they share, as flow over a broad-crested
                  weir with the Villemonte submergence reduction, so a full hollow spills
@@ -42,8 +42,10 @@ import math
 from typing import Any
 
 import numpy as np
+from scipy.spatial import cKDTree
 
-from app.services import hydraulics, terrain
+from app.services import hydraulics, surface, terrain
+from app.services.street_index import densify
 
 GRAVITY = 9.81
 
@@ -120,13 +122,13 @@ def build_surface(model: dict[str, Any]) -> dict[str, Any]:
     model["open"] (1 - building cover, at least MIN_OPEN), and a face between two
     cells passes water only through the gaps between buildings on both sides.
     """
-    zones, sea, surface = model["basins"], model["sea"], model["surface"]
+    zones, sea, heights = model["basins"], model["sea"], model["surface"]
     a = float(model["cell_area_m2"])
     n = sea + 1
     open_share = np.clip(model.get("open", np.ones(zones.shape)), MIN_OPEN, 1.0)
 
     flat_z = zones.ravel()
-    flat_s = surface.ravel().astype(np.float64)
+    flat_s = heights.ravel().astype(np.float64)
     land = np.flatnonzero(flat_z != sea)
     cells = land[np.lexsort((flat_s[land], flat_z[land]))]
     zc = flat_z[cells]
@@ -157,12 +159,12 @@ def build_surface(model: dict[str, Any]) -> dict[str, Any]:
     # Faces between cells of different zones. Neighbours east-west share a face as
     # long as a cell is tall; north-south, as wide as it is wide.
     dy = model["lat_step"] * terrain.M_PER_DEG
-    mid_lat = model["north"] - surface.shape[0] * model["lat_step"] / 2
+    mid_lat = model["north"] - heights.shape[0] * model["lat_step"] / 2
     dx = model["lon_step"] * terrain.M_PER_DEG * math.cos(math.radians(mid_lat))
     fa, fb, fc, fw = [], [], [], []
     for za, zb, sa, sb, oa, ob, width in (
-        (zones[:, :-1], zones[:, 1:], surface[:, :-1], surface[:, 1:], open_share[:, :-1], open_share[:, 1:], dy),
-        (zones[:-1, :], zones[1:, :], surface[:-1, :], surface[1:, :], open_share[:-1, :], open_share[1:, :], dx),
+        (zones[:, :-1], zones[:, 1:], heights[:, :-1], heights[:, 1:], open_share[:, :-1], open_share[:, 1:], dy),
+        (zones[:-1, :], zones[1:, :], heights[:-1, :], heights[1:, :], open_share[:-1, :], open_share[1:, :], dx),
     ):
         cut = za != zb
         # Lower id first; the sea has the highest id, so it is always the b side.
@@ -331,14 +333,14 @@ def build_network(model: dict[str, Any], s: dict[str, Any], drains: list[dict[st
         capacity.append(q if sized else None)
         v = cap["full_velocity_ms"]
         travel.append(drain["length_m"] / v if sized and v > 0 else 0.0)
-        entries.append([n for n in hydraulics._upstream_nodes(edge) if carrier.get(n) == i])
+        entries.append([n for n in hydraulics.upstream_nodes(edge) if carrier.get(n) == i])
         outlet.append(edge["nodes"][-1])
         # Where the graph hands this drain's water on: nowhere lower means an outfall.
         outfall.append(graph["downstream"][i] is None)
         # Inlets sit all along the drain, and so does the strip that drains to them:
         # both are shared evenly between the junctions along it, each of which hands
         # what it catches to the drain that carries water on from there.
-        along = [n for n in hydraulics._upstream_nodes(edge) if carrier.get(n) is not None]
+        along = [n for n in hydraulics.upstream_nodes(edge) if carrier.get(n) is not None]
         if not along:
             continue
         length = drain["length_m"]
@@ -427,15 +429,8 @@ def _drains_its_zone(carrier: dict[int, int], downstream: list, order: list, out
 def _blind_ends(outlet: np.ndarray, outfall: np.ndarray, xy: np.ndarray, node_zone: np.ndarray,
                 sea: int) -> np.ndarray:
     """Which outfall drains end away from any mapped channel and from the sea."""
-    import math
-
-    from scipy.spatial import cKDTree
-
-    from app.services import rain_ponding
-    from app.services.street_flood import densify
-
     blind = np.zeros(outfall.size, dtype=bool)
-    lines = rain_ponding._channel_lines()
+    lines = surface.channel_lines()
     if not outfall.any() or not lines:
         return blind
     scale = terrain.M_PER_DEG * math.cos(math.radians(13.0))
@@ -644,109 +639,3 @@ def coupled_summary(net: dict[str, Any], s: dict[str, Any]) -> dict[str, Any]:
         "outfalls_to_channels": outfalls - int(net["blind_end"].sum()),
         "blind_ends_to_ground": int(net["blind_end"].sum()),
     }
-
-
-if __name__ == "__main__":
-    # Weir: 1 m of crest, 0.2 m head, free: 1.705 x 0.2^1.5 = 0.1525 m³/s.
-    assert abs(weir_flow(np.array([1.0]), np.array([0.2]), np.array([0.0]))[0] - 0.15250) < 1e-4
-    # Drowned to 90 % of the head, it passes far less, and nothing when level.
-    assert weir_flow(np.array([1.0]), np.array([0.2]), np.array([0.18]))[0] < 0.08
-    assert weir_flow(np.array([1.0]), np.array([0.2]), np.array([0.2]))[0] == 0.0
-    # HEC-22: 5 cm over a clean-half grate is weir flow: 1.66 x 0.9 x 0.05^1.5.
-    g = grate_capacity(np.array([1.0]), np.array([0.0]), np.array([0.05]))[0]
-    assert abs(g - 1.66 * 0.9 * 0.05 ** 1.5) < 1e-9, g
-    # At 1 m the orifice governs: 0.67 x 0.05 x sqrt(2 g).
-    g = grate_capacity(np.array([1.0]), np.array([0.0]), np.array([1.0]))[0]
-    assert abs(g - 0.67 * 0.05 * math.sqrt(2 * GRAVITY)) < 1e-9, g
-
-    # Two bowls side by side inside an 11 m rim, sea around the edge, 10 m cells. West
-    # floor 5 x 5 at 10 m, east floor 5 x 5 at 9 m, a 10.5 m ridge column between them.
-    from app.services import rain_ponding
-
-    ground = np.full((9, 15), 11.0)
-    ground[2:7, 2:7] = 10.0
-    ground[2:7, 8:13] = 9.0
-    ground[2:7, 7] = 10.5
-    ground[[0, -1], :] = ground[:, [0, -1]] = -1.0
-    edge = ground < 0
-    m = rain_ponding.prepare(ground, edge, 100.0)
-    m.update({"north": 9 * 10 / terrain.M_PER_DEG, "west": 0.0, "lat_step": 10 / terrain.M_PER_DEG,
-              "lon_step": 10 / terrain.M_PER_DEG, "land": ground})
-    s = build_surface(m)
-    west, east = int(m["basins"][4, 4]), int(m["basins"][4, 10])
-    assert west != east and west != m["sea"]
-
-    # The fill curve: 25 floor cells x 0.4 m x 100 m² = 1000 m³ stands 0.4 m deep.
-    vol = np.zeros(s["n"])
-    vol[west] = 1000.0
-    lv, ar = levels(s, vol)
-    assert abs(lv[west] - 10.4) < 1e-9 and ar[west] == 2500.0, (lv[west], ar[west])
-    assert abs(volume_below(s, np.array([west]), np.array([10.4]))[0] - 1000.0) < 1e-6
-
-    # Half of every cell built over: the same 500 m³ stands twice as deep, 0.4 m not 0.2.
-    vol[:] = 0.0
-    vol[west] = 500.0
-    assert abs(levels(s, vol)[0][west] - 10.2) < 1e-9
-    half = build_surface({**m, "open": np.full(ground.shape, 0.5)})
-    assert abs(levels(half, vol)[0][west] - 10.4) < 1e-9
-    assert abs(volume_below(half, np.array([west]), np.array([10.4]))[0] - 500.0) < 1e-6
-
-    # Pour the west bowl over its ridge: water spills east, total volume conserved, and
-    # it never flows back uphill past equal levels.
-    vol[:] = 0.0
-    vol[west] = 25 * 100 * 0.8                              # to 10.8 m, above the ridge
-    total = vol.sum()
-    for _ in range(600):
-        sea_loss = exchange(s, vol, 30.0)
-        assert sea_loss == 0.0                              # rims at 11 m hold it all
-    lv, _ = levels(s, vol)
-    assert abs(vol.sum() - total) < 1e-6, (vol.sum(), total)
-    assert vol[east] > 0 and lv[west] >= 10.5 - 1e-6 and lv[east] <= lv[west] + 1e-6, (lv[west], lv[east])
-
-    # A full coupled run with one closed drain draining the east bowl to the sea, and
-    # mass held to round-off.
-    xy = lambda row, col: [(col + 0.5) * m["lon_step"], m["north"] - (row + 0.5) * m["lat_step"]]
-    fake_edges = [{"nodes": [0, 1], "local": 500.0, "head": 9.0, "tail": 8.0}]
-    fake_graph = hydraulics.network(fake_edges)
-    network = {"edges": fake_edges, "graph": fake_graph, "points": [xy(4, 10), xy(4, 14)]}
-    drains = [{"length_m": 50.0, "capacity": {"effective_capacity_m3s": 0.02,
-                                              "full_velocity_ms": 1.0, "closed": True}}]
-    net = build_network(m, s, drains, network)
-    run = simulate(s, net, [5.0] * 6 + [0.0] * 30, 5.0, 0.9, 1.0)
-    bal = run["balance"]
-    assert abs(bal["error_m3"]) < 1e-6 * max(1.0, bal["runoff"]), bal
-    assert bal["outfall"] > 0, bal
-    # Heavier rain than the drain can take surcharges at its head junction.
-    run = simulate(s, net, [60.0] * 12, 5.0, 0.9, 1.0)
-    assert run["surcharge_m3"][:, 0].sum() >= 0 and abs(run["balance"]["error_m3"]) < 1e-5 * run["balance"]["runoff"]
-    print("synthetic checks passed:", {k: bal[k] for k in ("runoff", "outfall", "on_surface", "to_sea")})
-
-    # Against the real city, if the DEM and the survey are here.
-    import sys
-    import time
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parent.parent.parent
-    sys.path.insert(0, str(root))
-    from dotenv import load_dotenv
-
-    load_dotenv(root / ".env")
-    from app.routes import drains as drain_route
-
-    city = rain_ponding.load(12.85, 13.25, 80.10, 80.35)
-    if city is not None:
-        began = time.perf_counter()
-        s = build_surface(city)
-        net = build_network(city, s, drain_route._load_csv(), drain_route.drain_graph())
-        print(f"built in {time.perf_counter() - began:.1f} s: {s['fa'].size} faces, "
-              f"{s['pa'].size} zone pairs; {coupled_summary(net, s)}")
-        for label, rain in (("30 mm/h for 1 h, then dry", [2.5] * 12 + [0.0] * 24),
-                            ("60 mm/h for 3 h", [5.0] * 36)):
-            began = time.perf_counter()
-            run = simulate(s, net, rain, 5.0, 0.75, 1.0)
-            took = time.perf_counter() - began
-            bal = run["balance"]
-            assert abs(bal["error_m3"]) < 1e-6 * bal["runoff"], bal
-            surcharging = int((run["surcharge_m3"].sum(axis=0) > 1.0).sum())
-            print(f"{label}: {took:.1f} s; {surcharging} junctions surcharge; balance {bal}")
-    print("coupled self-check passed")

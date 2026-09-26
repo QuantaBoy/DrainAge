@@ -13,7 +13,9 @@ import pickle
 from pathlib import Path
 from typing import Any, Callable
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache"
+from app import config
+
+CACHE_DIR = config.CACHE_DIR
 
 
 def _key(inputs: list[Path]) -> str:
@@ -51,19 +53,3 @@ def cached(name: str, inputs: list[Path], build: Callable[[], Any]) -> Any:
 def sources(*modules: Any) -> list[Path]:
     """The .py files of modules, as cache inputs: editing the code invalidates the cache."""
     return [Path(module.__file__) for module in modules]
-
-
-if __name__ == "__main__":
-    import tempfile
-
-    CACHE_DIR = Path(tempfile.mkdtemp())
-    src = CACHE_DIR / "input.txt"
-    src.write_text("a")
-    calls = []
-    build = lambda: calls.append(1) or {"v": len(calls)}
-    assert cached("t", [src], build) == {"v": 1}
-    assert cached("t", [src], build) == {"v": 1} and len(calls) == 1     # from disk
-    src.write_text("ab")                                                  # input changed
-    assert cached("t", [src], build) == {"v": 2} and len(calls) == 2
-    assert len(list(CACHE_DIR.glob("t-*.pkl"))) == 1                      # old one gone
-    print("diskcache self-check passed")

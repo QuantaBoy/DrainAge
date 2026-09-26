@@ -19,21 +19,21 @@ junctions to find the same answer.
 
 ponytail: one-way streets are not in the cached street layer, so every road is
 two-way. That is right for emergency vehicles and wrong for commuters on the
-city's one-way grid; the Overpass query in app/routes/streets.py would need the
+city's one-way grid; the Overpass query in app/services/osm.py would need the
 oneway tag to fix it.
 """
 
 import heapq
 import json
 import math
-from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.spatial import cKDTree
 
+from app import config
 from app.services import terrain
-
-STREETS_PATH = Path(__file__).resolve().parent.parent / "data" / "chennai_streets.geojson"
+from app.services.street_index import densify
 
 WET_CM = 5.0
 IMPASSABLE_CM = 30.0
@@ -59,7 +59,7 @@ def load() -> dict[str, Any]:
     if _graph is not None:
         return _graph
 
-    roads = json.loads(STREETS_PATH.read_text(encoding="utf-8"))["features"]
+    roads = json.loads(config.STREETS_GEOJSON.read_text(encoding="utf-8"))["features"]
     key = lambda c: (round(c[0], 7), round(c[1], 7))
 
     # A vertex two roads share, or a road's end, is a junction; the rest is shape.
@@ -107,8 +107,6 @@ def load() -> dict[str, Any]:
                 adjacency[b].append((a, index))
             start = i
 
-    from scipy.spatial import cKDTree
-
     xy = np.asarray(points)
     _graph = {
         "points": points,
@@ -135,8 +133,6 @@ def edge_depths_cm(model: dict[str, Any], depth_grid_m: np.ndarray) -> np.ndarra
     """
     graph = load()
     if graph.get("cells_for") != id(model):
-        from app.services.street_flood import densify
-
         rows_n, cols_n = model["surface"].shape
         cells, owners = [], []
         for index, edge in enumerate(graph["edges"]):
@@ -266,37 +262,3 @@ def flooded_on(path: dict[str, Any], depth_cm: np.ndarray) -> list[dict[str, Any
                                "impassable": bool(depth_cm[index] >= IMPASSABLE_CM)},
             })
     return out
-
-
-if __name__ == "__main__":
-    import time
-
-    began = time.perf_counter()
-    graph = load()
-    print(f"{len(graph['points'])} junctions, {len(graph['edges'])} stretches, "
-          f"built in {time.perf_counter() - began:.1f} s")
-
-    # Chennai Central to Guindy, dry: both algorithms must agree on the cost.
-    a, _ = nearest_node(13.0827, 80.2707)
-    b, _ = nearest_node(13.0067, 80.2206)
-    dry = weights(None)
-    d, s = dijkstra(a, b, dry), astar(a, b, dry)
-    assert d["found"] and s["found"]
-    assert abs(d["cost"] - s["cost"]) < 1e-6, (d["cost"], s["cost"])
-    # A* settles fewer junctions for the same answer: that is what the guide buys.
-    assert s["settled"] < d["settled"], (s["settled"], d["settled"])
-    route = describe(s, a, None)
-    straight = _metres(graph["points"][a], graph["points"][b]) / 1000
-    assert straight <= route["length_km"] < straight * 2, (straight, route["length_km"])
-    print(f"Central -> Guindy: {route['length_km']} km by road ({straight:.1f} km straight); "
-          f"Dijkstra settled {d['settled']}, A* {s['settled']}")
-
-    # Flooding a road on the route pushes the route off it, or makes it dearer.
-    wet_depth = np.zeros(len(graph["edges"]))
-    wet_depth[s["edges"][len(s["edges"]) // 2]] = 50.0
-    rerouted = astar(a, b, weights(wet_depth))
-    assert rerouted["found"] and s["edges"][len(s["edges"]) // 2] not in rerouted["edges"]
-    assert rerouted["cost"] >= s["cost"]
-    # Shallow water costs more than dry but stays usable.
-    assert weights(np.full(len(graph["edges"]), 20.0))[0] == graph["length"][0] * 3.0
-    print("routing self-check passed")

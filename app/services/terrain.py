@@ -1,10 +1,10 @@
 """The ground the water ends up on: a DEM, read where it is needed.
 
 Where rain runs, where it stands and how deep it gets on a street are all read off the
-ground (app/services/rain_ponding.py cuts it into storage zones for the flood model).
+ground (app/services/surface.py cuts it into storage zones for the flood model).
 
 The DEM is 1 arc-second (about 30 m at Chennai's latitude) in plain WGS 84: the
-OpenTopography download fetch_dem.py saves (GEDTM30 bare earth by preference), or the
+OpenTopography download scripts/fetch_dem.py saves (GEDTM30 bare earth by preference), or the
 Copernicus surface-model tiles. Either way a lon/lat maps onto a pixel with the tie
 point, pixel scale and raster type from the GeoTIFF itself - no reprojection, no GDAL.
 
@@ -13,14 +13,19 @@ depth of the depression a street sits in, not of the kerb line. Swapping in a Li
 or drone DSM changes only the files this module reads.
 """
 
+import logging
 import math
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import tifffile
+from PIL import Image
+from scipy.ndimage import minimum_filter
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+from app import config
+
 TILE_PATTERN = "Copernicus_DSM_COG_10_N{lat:02d}_00_E{lon:03d}_00_DEM.tif"
 
 # Metres per degree of latitude; longitude is scaled by cos(latitude) where it matters.
@@ -29,11 +34,11 @@ M_PER_DEG = 111_320.0
 # Water shallower than this is wet tarmac, not a flood, and is not reported.
 MIN_DEPTH_M = 0.02
 
-# Which DEM the model reads. fetch_dem.py saves OpenTopography downloads to
+# Which DEM the model reads. scripts/fetch_dem.py saves OpenTopography downloads to
 # app/data/dem/<DEMTYPE>.tif; the Copernicus tiles in app/data are the fallback.
 # DEM_SOURCE in .env picks one ("GEDTM30", "COP30", "tiles"); unset, a bare-earth
 # model wins over a surface one, and any download over the tiles.
-DEM_DIR = DATA_DIR / "dem"
+DEM_DIR = config.DATA_DIR / "dem"
 DEM_PREFERENCE = ("GEDTM30", "COP30", "NASADEM", "AW3D30", "SRTMGL1", "COP90")
 # A terrain model (DTM) has buildings and trees taken out; a surface model (DSM) reads
 # roofs and canopy as ground and needs the road-level trick in ground_level().
@@ -48,8 +53,6 @@ _sources: list[dict[str, Any]] | None = None
 
 def _read_raster(path: Path, name: str) -> dict[str, Any]:
     """One GeoTIFF, with its extent worked out from the tags it carries."""
-    import logging
-
     logging.getLogger("tifffile").setLevel(logging.ERROR)
     with tifffile.TiffFile(str(path)) as handle:
         page = handle.pages[0]
@@ -95,9 +98,7 @@ def _load_sources() -> list[dict[str, Any]]:
     if _sources is not None:
         return _sources
 
-    import os
-
-    wanted = os.environ.get("DEM_SOURCE", "").strip()
+    wanted = config.DEM_SOURCE
     downloads = {name: DEM_DIR / f"{name}.tif" for name in DEM_PREFERENCE}
     if wanted and wanted.lower() != "tiles":
         order = [wanted]
@@ -109,7 +110,7 @@ def _load_sources() -> list[dict[str, Any]]:
     sources = [_read_raster(downloads[name], name) for name in order if downloads.get(name, Path()).exists()]
     if not sources:
         sources = [_read_raster(path, "Copernicus GLO-30 tile")
-                   for path in sorted(DATA_DIR.glob("Copernicus_DSM_COG_10_*_DEM.tif"))]
+                   for path in sorted(config.DATA_DIR.glob("Copernicus_DSM_COG_10_*_DEM.tif"))]
     _sources = sources
     return _sources
 
@@ -122,7 +123,7 @@ def source_info() -> dict[str, Any]:
     return {
         "name": sources[0]["name"] if len(sources) == 1 else "Copernicus GLO-30 tiles",
         "kind": sources[0]["kind"],
-        "files": [str(r["path"].relative_to(DATA_DIR.parent.parent)) for r in sources],
+        "files": [str(r["path"].relative_to(config.ROOT_DIR)) for r in sources],
     }
 
 
@@ -177,8 +178,6 @@ def ground_level(lat: float, lon: float) -> float | None:
     if tile["kind"] == "terrain":
         return _value(tile["grid"][cell])
     if "road" not in tile:
-        from scipy.ndimage import minimum_filter
-
         # No-data must not win the minimum, so it is lifted out of reach and put back.
         lifted = np.where(np.isfinite(tile["grid"]), tile["grid"], np.inf)
         road = minimum_filter(lifted, size=3, mode="nearest")
@@ -249,10 +248,6 @@ def relief_image(dem: dict[str, Any], opacity: float = 0.7) -> bytes:
     the ground fall", which is what decides where water runs. Both are needed to read
     a flat city, where the colour alone barely changes from one street to the next.
     """
-    from io import BytesIO
-
-    from PIL import Image
-
     heights = dem["grid"].astype(np.float64)
     # Copernicus flattens open water to exactly 0 m. Left in, the Bay of Bengal is a
     # quarter of this box and would be painted as the lowest - most flood-prone - land
@@ -287,37 +282,24 @@ def relief_image(dem: dict[str, Any], opacity: float = 0.7) -> bytes:
     return buffer.getvalue()
 
 
-if __name__ == "__main__":
-    # And against the real tiles, if they are present.
-    city = grid(12.85, 13.25, 80.10, 80.35)
-    if city is not None:
-        # Whatever the source, the city is covered: no-data only where the sea is,
-        # and no seam along 13 degrees N where the tiles meet.
-        land = city["grid"][:, :int(0.6 * city["grid"].shape[1])]
-        assert np.isfinite(land).mean() > 0.97, "holes in the DEM over land"
-        seam = int(round((13.25 - 13.0) / city["lat_step"]))
-        assert abs(float(np.nanmean(city["grid"][seam - 1])) - float(np.nanmean(city["grid"][seam]))) < 3
-        # The grid and the point lookup must agree: the box edges need not fall on
-        # pixel edges, so the point's pixel is this cell or a neighbour of it.
-        row = int((13.25 - 13.0827) / city["lat_step"])
-        col = int((80.2707 - 80.10) / city["lon_step"])
-        near = city["grid"][row - 1:row + 2, col - 1:col + 2]
-        assert np.any(np.isclose(near, elevation(13.0827, 80.2707))), (near, elevation(13.0827, 80.2707))
-        png = relief_image(city)
-        assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 10_000
-        # Road level never sits above the surface it is read from.
-        for lat_, lon_ in ((13.0827, 80.2707), (13.04, 80.23), (12.98, 80.20)):
-            assert ground_level(lat_, lon_) <= elevation(lat_, lon_) + 1e-6
-        print(f"DEM source: {source_info()}")
-        print(f"Chennai DEM {city['grid'].shape[1]} x {city['grid'].shape[0]}, "
-              f"{np.nanmin(city['grid']):.1f} to {np.nanmax(city['grid']):.1f} m, "
-              f"relief image {len(png) / 1e6:.1f} MB")
+# The relief image is the same for every visitor and slow to draw, so it is drawn once.
+_relief: dict[str, Any] = {}
 
-    here = elevation(13.0827, 80.2707)          # Chennai Central
-    if here is None:
-        print("DEM tiles not found; formula checks passed")
-    else:
-        assert -5 < here < 60, here             # Chennai is flat and near sea level
-        assert elevation(13.0, 80.2) is not None and elevation(12.9, 80.2) is not None
-        print(f"Chennai Central ground {here:.1f} m")
-    print("terrain self-check passed")
+
+def relief_layer() -> dict[str, Any] | None:
+    """The study area's shaded relief as a PNG, with where it goes and how to read it."""
+    if not _relief:
+        south, west, north, east = config.CHENNAI_BBOX
+        dem = grid(south, north, west, east)
+        if dem is None:
+            return None
+        land = dem["grid"][(dem["grid"] == dem["grid"]) & (dem["grid"] != 0)]
+        _relief.update({
+            "png": relief_image(dem),
+            "bounds": [[south, west], [north, east]],
+            "range_m": [round(float(land.min()), 1), round(float(land.max()), 1)],
+            "median_m": round(float(np.median(land)), 1),
+            "stops": [{"m": m, "color": "#%02x%02x%02x" % rgb} for m, rgb in ELEVATION_STOPS],
+            "source": source_info(),
+        })
+    return _relief

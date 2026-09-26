@@ -9,7 +9,7 @@ Two things the rest of the site takes from it:
 * **Where the water goes.** The channel nearest a place names the drain it runs to and
   the basin it belongs to, so a street's flooding can be reported as "Adyar basin,
   towards Okkium Madavu Drain" rather than as an anonymous dip in the terrain.
-* **Where water can flow.** app/services/rain_ponding.py burns these channels into the
+* **Where water can flow.** app/services/surface.py burns these channels into the
   DEM, because a channel a 30 m DEM cannot see reads as a dam across the hollow above it.
 
 The files hold no cross-section, so nothing here sizes a channel: they place and name
@@ -19,14 +19,15 @@ the network, they do not say what it can carry.
 import csv
 import math
 import re
-from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.spatial import cKDTree
 
+from app import config
 from app.services import terrain
+from app.services.street_index import densify
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "Cross-Checked Data"
 FILES = ("macro_drains.csv", "micro_drains.csv", "buckingham_canal.csv",
          "krishna_water_canal.csv", "rivers_streams.csv")
 
@@ -49,7 +50,7 @@ def load() -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
     for name in FILES:
-        path = DATA_DIR / name
+        path = config.SURVEY_DIR / name
         if not path.exists():
             continue
         with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -90,10 +91,6 @@ def _points() -> dict[str, Any]:
     """Every channel resampled to an even spacing, in a tree, with its channel."""
     global _index
     if _index is None:
-        from scipy.spatial import cKDTree
-
-        from app.services.street_flood import densify
-
         xy, owner = [], []
         for i, channel in enumerate(load()):
             dense = densify(channel["coords"], SPACING_M)
@@ -137,42 +134,3 @@ def nearest_many(places: list[tuple[float, float]]) -> list[dict[str, Any] | Non
             "metres_away": round(float(metres), 0),
         })
     return out
-
-
-if __name__ == "__main__":
-    import collections
-
-    found = load()
-    print(f"{len(found)} channel lines from {len(FILES)} files")
-    basins = collections.Counter(c["subbasin"] for c in found)
-    print("subbasins:", dict(basins.most_common()))
-    kinds = collections.Counter(c["type"] for c in found)
-    print("types:", dict(kinds))
-    print("routed by the official model:", sum(1 for c in found if c["routed"]))
-    print("named:", sum(1 for c in found if c["name"]))
-
-    # The drawn geometry must agree with the length the file states.
-    gap = []
-    for channel in found:
-        if not channel["length_km"]:
-            continue
-        drawn = sum(math.hypot((b[0] - a[0]) * terrain.M_PER_DEG * math.cos(math.radians(13.0)),
-                               (b[1] - a[1]) * terrain.M_PER_DEG)
-                    for a, b in zip(channel["coords"], channel["coords"][1:])) / 1000
-        gap.append(abs(drawn - channel["length_km"]) / channel["length_km"] * 100)
-    gap.sort()
-    assert gap and gap[len(gap) // 2] < 2.0, gap[len(gap) // 2]
-    print(f"stated length vs drawn geometry: median {gap[len(gap) // 2]:.1f}% apart")
-
-    # Chennai Central sits in the Cooum basin, and the nearest channel is not far.
-    here = nearest(13.0827, 80.2707)
-    assert here and here["subbasin"], here
-    print(f"Chennai Central -> {here['name'] or 'unnamed'} ({here['subbasin']} basin, "
-          f"{here['metres_away']:.0f} m away)")
-    for place, lat, lon in (("Velachery", 12.979, 80.218),
-                            ("Pallikaranai", 12.9465, 80.2315),
-                            ("Ambattur", 13.105, 80.160)):
-        near = nearest(lat, lon)
-        print(f"{place} -> {near['name'] or 'unnamed'} ({near['subbasin']} basin, "
-              f"{near['metres_away']:.0f} m)")
-    print("channels self-check passed")

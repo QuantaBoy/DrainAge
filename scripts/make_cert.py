@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-CERT_DIR = Path(__file__).resolve().parent / "certs"
+CERT_DIR = Path(__file__).resolve().parent.parent / "certs"
 
 
 def lan_ip():

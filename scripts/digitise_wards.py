@@ -15,8 +15,8 @@ Because the lettering is strokes, it is read by OCR. Step one renders every shee
 tiles and caches what the OCR saw (slow, once); step two parses the cache into
 app/data/ward_points.json (fast, rerun freely).
 
-    python digitise_wards.py ocr        # all sheets, cached under .ward_ocr/
-    python digitise_wards.py parse      # -> app/data/ward_points.json
+    python scripts/digitise_wards.py ocr        # all sheets, cached under .ward_ocr/
+    python scripts/digitise_wards.py parse      # -> app/data/ward_points.json
 
 Needs, for this tool only (not the website): pip install pymupdf rapidocr_onnxruntime
 """
@@ -26,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 WARD_DIR = ROOT / "Ward"
 CACHE = ROOT / ".ward_ocr"
 OUT = ROOT / "app" / "data" / "ward_points.json"

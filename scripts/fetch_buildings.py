@@ -1,10 +1,10 @@
 """Building footprints from OpenStreetMap, as the share of each DEM cell they cover.
 
-    python fetch_buildings.py        # -> app/data/building_fraction.npz
-    python fetch_buildings.py water  # -> app/data/water_bodies.npz
+    python scripts/fetch_buildings.py        # -> app/data/building_fraction.npz
+    python scripts/fetch_buildings.py water  # -> app/data/water_bodies.npz
 
 Water bodies (lakes, tanks, ponds, reservoirs) are fetched the same way: the DEM
-cleaning in app/services/rain_ponding.py fills small deep pits as noise, and these are
+cleaning in app/services/surface.py fills small deep pits as noise, and these are
 the small deep hollows that are real and must be kept.
 
 Water cannot stand inside a building, so the flood model gives each 30 m cell only the
@@ -27,7 +27,7 @@ import httpx
 import numpy as np
 from PIL import Image, ImageDraw
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / ".osm_buildings"
 OUT = ROOT / "app" / "data" / "building_fraction.npz"
 WATER_OUT = ROOT / "app" / "data" / "water_bodies.npz"
@@ -42,7 +42,7 @@ OVERPASS = ("https://overpass-api.de/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter")
 USER_AGENT = "SIH26085-flood-dashboard/1.0"
 
-# The flood model's box and grid (app/routes/streets.CHENNAI_BBOX, 1 arc-second DEM).
+# The flood model's box and grid (app/config.CHENNAI_BBOX, 1 arc-second DEM).
 SOUTH, WEST, NORTH, EAST = 12.85, 80.10, 13.25, 80.35
 STEP = 1 / 3600
 TILE_DEG = 0.05
