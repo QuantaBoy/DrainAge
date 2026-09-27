@@ -23,11 +23,43 @@ for (const [label, layer] of WEATHER_LAYERS) {
     });
 }
 
-// On the dashboard the layer list lives in the side panel, so nothing but the flood sits
-// over the map; elsewhere it folds into an icon on the map.
-const layerDock = document.getElementById("layer-dock");
-const layerControl = L.control.layers(null, weatherOverlays, { collapsed: !layerDock, position: "topright" }).addTo(map);
-if (layerDock) layerDock.append(layerControl.getContainer());
+// The layer list sits on the map it changes: a Layers button top-right that opens the
+// list under it. The model's own layers come first, the weather pictures after.
+const LAYER_ORDER = ["Flood forecast", "Storm Water Drains", "Elevation", "Streets", "Rain",
+                     "Temperature", "Wind", "Clouds"];
+const layerRank = (name) => {
+    const i = LAYER_ORDER.findIndex((prefix) => name.startsWith(prefix));
+    return i < 0 ? LAYER_ORDER.length : i;
+};
+const layerControl = L.control.layers(null, weatherOverlays, {
+    collapsed: false, position: "topright", sortLayers: true,
+    sortFunction: (a, b, nameA, nameB) => layerRank(nameA) - layerRank(nameB),
+});
+const LayerButton = L.Control.extend({
+    options: { position: "topright" },
+    onAdd() {
+        const button = L.DomUtil.create("button", "layer-button");
+        button.type = "button";
+        button.setAttribute("aria-expanded", "false");
+        button.setAttribute("aria-controls", "layer-list");
+        button.innerHTML = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' +
+            '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></svg><span>Layers</span>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, "click", () => setLayersOpen(!document.body.classList.contains("layers-open")));
+        return button;
+    },
+});
+const layerButton = new LayerButton().addTo(map);
+layerControl.addTo(map);
+layerControl.getContainer().id = "layer-list";
+layerControl.getContainer().classList.add("layer-list");
+function setLayersOpen(open) {
+    document.body.classList.toggle("layers-open", open);
+    layerButton.getContainer().setAttribute("aria-expanded", String(open));
+}
+// Closes on a click on the map or Escape, like any menu.
+map.on("click", () => setLayersOpen(false));
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") setLayersOpen(false); });
 
 // --- Street network --------------------------------------------------------------
 // Chennai's roads, fetched once and cached server-side; this is the geometry later

@@ -1477,6 +1477,23 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
                     border-radius: 50%; vertical-align: .1em; background: currentColor; opacity: .8; }
 }
 
+/* ─── Map layers: a button on the map, the list under it ─── */
+.layer-button {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .8rem; border: 1px solid var(--line); border-radius: 8px !important;
+    background: var(--card); color: var(--ink); font-size: .84rem; font-weight: 500;
+    box-shadow: var(--shadow);
+}
+.layer-button:hover, .layers-open .layer-button { background: var(--accent-soft); }
+.leaflet-control-layers.layer-list { display: none; min-width: 15rem; padding: .5rem .3rem .4rem .7rem; margin-top: 6px; }
+.layers-open .leaflet-control-layers.layer-list { display: block; }
+.layer-list .leaflet-control-layers-overlays label { padding: .32rem 0; font-size: .84rem; }
+.layer-list .leaflet-control-layers-overlays label:nth-child(5) {
+    margin-top: .35rem; padding-top: .55rem; border-top: 1px solid var(--line);
+}
+.layer-list input { accent-color: var(--ink); margin-right: .45rem; }
+.leaflet-top.leaflet-right { z-index: 1001; }
+
 @media (max-width: 48rem) {
     .shell .nav { border-right: 0; padding-right: 0; }
     .shell .topbar { height: auto; min-height: 52px; padding: .45rem .75rem; }
@@ -1487,4 +1504,6 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     .top-search { display: none; }
     .guide-open span { display: none; }
     .guide-open { width: 2.3rem; padding: 0; justify-content: center; }
+    .layer-button span { display: none; }
+    .layer-button { padding: .5rem; }
 }

@@ -84,10 +84,17 @@
         {
             target: '#tabs [data-tab="more"]',
             before: tab("more"),
-            title: "More: weather, drains and layers",
-            text: "Current weather and the 7-day rain forecast, the storm water drain network " +
-                  "(switch it on to see which drains are overloaded), and map layers such as " +
-                  "elevation.",
+            title: "More: weather and drains",
+            text: "Current weather and the 7-day rain forecast, and the storm water drain " +
+                  "network: switch it on to see which drains are overloaded, by zone or ward.",
+        },
+        {
+            target: ".layer-button",
+            title: "Map layers",
+            text: "Choose what the map shows. Keep <b>Flood forecast</b> on; add <b>Storm Water " +
+                  "Drains</b> or <b>Elevation</b> to see why a street floods, or <b>Rain</b> to " +
+                  "see the storm moving.",
+            before: () => setLayersOpen(true),
         },
         {
             target: "#top-search",
