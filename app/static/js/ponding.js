@@ -96,7 +96,7 @@ const pondingUi = (() => {
 
 // A banner across the map while a scenario is drawn, so a screenshot of it cannot be
 // taken for a forecast.
-const scenarioBanner = L.control({ position: "topleft" });
+const scenarioBanner = L.control({ position: "topright" });
 scenarioBanner.onAdd = () => el("div", "scenario-banner");
 
 function showMode(data) {

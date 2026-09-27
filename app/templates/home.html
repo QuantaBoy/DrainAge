@@ -58,12 +58,12 @@
                     aria-label="Resize panel"><span></span></button>
 
             <nav class="tabs" id="tabs" role="tablist" aria-label="Panels">
-                <button role="tab" data-tab="alerts" aria-selected="true">
+                <button role="tab" data-tab="route" aria-selected="true">
+                    <span class="tab-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H17a3.5 3.5 0 0 0 0-7H7a3.5 3.5 0 0 1 0-7h8.5"/></svg></span><span>Route</span></button>
+                <button role="tab" data-tab="alerts" aria-selected="false">
                     <span class="tab-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><span>Alerts</span></button>
                 <button role="tab" data-tab="streets" aria-selected="false">
                     <span class="tab-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span><span>Streets</span></button>
-                <button role="tab" data-tab="route" aria-selected="false">
-                    <span class="tab-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H17a3.5 3.5 0 0 0 0-7H7a3.5 3.5 0 0 1 0-7h8.5"/></svg></span><span>Route</span></button>
                 <button role="tab" data-tab="whatif" aria-selected="false">
                     <span class="tab-icon" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 16.6A5 5 0 0 0 18 7h-1.3A8 8 0 1 0 4 15.3"/><path d="M8 19v2M12 17v2M16 19v2"/></svg></span><span>What-if</span></button>
                 <button role="tab" data-tab="more" aria-selected="false">
@@ -79,7 +79,7 @@
                     <div id="detail-body"></div>
                 </section>
 
-                <section class="panel" data-panel="alerts" role="tabpanel">
+                <section class="panel" data-panel="alerts" role="tabpanel" hidden>
                     <div id="alerts" class="alerts">
                         <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
                     </div>
@@ -89,7 +89,7 @@
                     <section id="street-depths" aria-label="Street-level depth table" hidden></section>
                 </section>
 
-                <section class="panel" data-panel="route" role="tabpanel" hidden>
+                <section class="panel" data-panel="route" role="tabpanel">
                     <aside id="route-panel" aria-label="Flood-safe route"></aside>
                 </section>
 
@@ -136,6 +136,30 @@
 
         <div class="map-wrap">
             <div id="map"></div>
+
+            <!-- Directions first, as in a maps app: from, to, when, Go. -->
+            <form class="dir-bar" id="dir-bar" role="search" aria-label="Flood-safe directions" autocomplete="off">
+                <div class="dir-fields">
+                    <label class="dir-field dir-extra">
+                        <span class="dir-dot from" aria-hidden="true"></span>
+                        <input id="dir-from" type="search" placeholder="Start: your location, or a place"
+                               aria-label="Start">
+                    </label>
+                    <button class="dir-swap dir-extra" id="dir-swap" type="button" title="Swap start and destination"
+                            aria-label="Swap start and destination">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/></svg>
+                    </button>
+                    <label class="dir-field">
+                        <span class="dir-dot to" aria-hidden="true"></span>
+                        <input id="dir-to" type="search" placeholder="Where to? e.g. Guindy" aria-label="Destination">
+                    </label>
+                </div>
+                <select id="dir-leave" class="dir-leave dir-extra" aria-label="When you leave"></select>
+                <button class="dir-go" type="submit">
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                    <span>Safe route</span>
+                </button>
+            </form>
 
             <!-- The main control: where the forecast is in time. -->
             <div class="timebar" id="timebar">
@@ -191,5 +215,6 @@
     <script src="{{ url_for('static', path='js/flood.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/ponding.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/route.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/directions.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/guide.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

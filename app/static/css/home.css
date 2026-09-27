@@ -1507,3 +1507,72 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     .layer-button span { display: none; }
     .layer-button { padding: .5rem; }
 }
+
+
+/* ─── Directions bar: first thing on the map ─── */
+.dir-bar {
+    position: absolute; z-index: 850; top: 12px; left: 12px;
+    max-width: calc(100% - 9rem);
+    display: flex; align-items: center; gap: .5rem;
+    padding: .4rem; background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .06);
+}
+.dir-fields { display: flex; align-items: center; gap: .25rem; min-width: 0; }
+.dir-field {
+    display: flex; align-items: center; gap: .45rem; min-width: 0;
+    padding: 0 .6rem; height: 2.4rem; border-radius: 6px; background: var(--bg);
+}
+.dir-field:focus-within { box-shadow: 0 0 0 2px var(--ink); background: var(--card); }
+.dir-field input {
+    width: 12.5rem; min-width: 0; height: 100%; padding: 0 !important;
+    border: 0 !important; background: transparent !important; box-shadow: none !important;
+    font: inherit; font-size: .88rem; color: var(--ink); outline: none;
+}
+.dir-dot { flex: none; width: .6rem; height: .6rem; border-radius: 50%; }
+.dir-dot.from { border: 2px solid #1b8f4d; }
+.dir-dot.to { background: #c62828; border-radius: 2px; transform: rotate(45deg); }
+.dir-swap {
+    display: grid; place-items: center; width: 2rem; height: 2rem; flex: none;
+    border: 0; background: transparent; color: var(--muted);
+}
+.dir-swap:hover { background: var(--accent-soft); color: var(--ink); }
+.dir-leave { height: 2.4rem; padding: 0 .5rem; font-size: .84rem; max-width: 9rem; }
+.dir-go {
+    display: inline-flex; align-items: center; gap: .35rem; flex: none;
+    height: 2.4rem; padding: 0 .9rem; border: 0;
+    background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: .86rem;
+}
+.dir-go:hover { opacity: .88; }
+
+/* Narrow map: the two places stack, the time and Go sit beside them. */
+@media (max-width: 80rem) {
+    .dir-fields { flex-direction: column; align-items: stretch; gap: .3rem; }
+    .dir-swap { display: none; }
+    .dir-field input { width: 13rem; }
+}
+
+@media (max-width: 48rem) {
+    .dir-bar {
+        top: .5rem; left: .5rem; right: .5rem; max-width: none;
+        flex-wrap: wrap; padding: .35rem;
+    }
+    .dir-fields { flex: 1 1 100%; }
+    .dir-field input { width: 100%; }
+    .dir-field { flex: 1; }
+    /* One "Where to?" box until it is used; then the start, the time and Go. */
+    .dir-bar:not(.open) .dir-extra { display: none; }
+    .dir-bar:not(.open) .dir-go span { display: none; }
+    .dir-bar:not(.open) { flex-wrap: nowrap; }
+    .dir-bar:not(.open) .dir-fields { flex: 1; }
+    .dir-bar.open .dir-leave { flex: 1; max-width: none; }
+    .map-wrap .leaflet-top { top: 3.6rem; }
+    body:has(.dir-bar.open) .map-wrap .leaflet-top { top: 9.2rem; }
+}
+
+/* The route asked for in the directions bar shows first in the panel; the form that
+   refines it (pick on the map, search method) follows. */
+.route-panel { display: flex; flex-direction: column; }
+.route-panel > .drain-header { order: -2; }
+.route-panel > .route-result { order: -1; margin: 0 0 .8rem; }
+.route-panel > .route-result:empty { display: none; }

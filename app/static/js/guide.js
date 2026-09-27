@@ -22,6 +22,25 @@
                   "it from the Guide button at the top.",
         },
         {
+            target: "#dir-bar",
+            title: "Get there without the water",
+            text: "Type <b>where to</b> (and a start, or leave it empty for your location), pick " +
+                  "when you <b>leave</b>, and press <i>Safe route</i>. The blue line avoids roads " +
+                  "over 30 cm; the dashed grey line is the shortest route, with its flooded parts marked.",
+            action: {
+                label: "Show a sample route",
+                run: () => {
+                    document.getElementById("dir-from").value = "Chennai Central";
+                    document.getElementById("dir-to").value = "Guindy";
+                    routeUi.from.input.value = "Chennai Central";
+                    setPoint(routeUi.from, 13.0827, 80.2707, "Chennai Central");
+                    routeUi.to.input.value = "Guindy";
+                    setPoint(routeUi.to, 13.0067, 80.2206, "Guindy");
+                    routeUi.go.click();
+                },
+            },
+        },
+        {
             target: "#mode-pill",
             title: "Live or scenario",
             text: "<b>LIVE</b> means the map uses the real rain forecast. <b>SCENARIO</b> means a " +
@@ -65,21 +84,10 @@
         {
             target: '#tabs [data-tab="route"]',
             before: tab("route"),
-            title: "Route: get around the water",
-            text: "Type <b>From</b> and <b>To</b> (or press <i>Map</i> and click the map), choose " +
-                  "when you <b>Leave</b>, then <i>Find safe route</i>. The blue line avoids " +
-                  "roads over 30 cm; the grey dashed line is the shortest route, with its " +
-                  "flooded parts marked.",
-            action: {
-                label: "Show a sample route",
-                run: () => {
-                    routeUi.from.input.value = "Chennai Central";
-                    setPoint(routeUi.from, 13.0827, 80.2707, "Chennai Central");
-                    routeUi.to.input.value = "Guindy";
-                    setPoint(routeUi.to, 13.0067, 80.2206, "Guindy");
-                    routeUi.go.click();
-                },
-            },
+            title: "Route: the details",
+            text: "The route you asked for appears here: its length and time, the water on it, " +
+                  "what it avoided, and alternatives if a place name matched more than one spot. " +
+                  "You can also pick the start or destination by clicking the map.",
         },
         {
             target: '#tabs [data-tab="more"]',
@@ -207,7 +215,7 @@
         index = -1;
         dim.remove(); spot.remove(); card.remove();
         document.body.classList.remove("guide-on");
-        window.shell?.tab("alerts");
+        window.shell?.tab("route");
         returnFocus?.focus?.();
     }
 
