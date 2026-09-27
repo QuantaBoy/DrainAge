@@ -29,7 +29,7 @@ function depthColor(cm) {
 // flooded streets should sit in the blues.
 
 const elevationLayer = L.layerGroup();
-layerControl.addOverlay(elevationLayer, "Elevation (DEM)");
+layerControl.addOverlay(elevationLayer, "Elevation (terrain height)");
 
 const elevationLegend = L.control({ position: "bottomright" });
 elevationLegend.onAdd = () => {

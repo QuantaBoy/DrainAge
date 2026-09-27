@@ -10,7 +10,7 @@
 // flood.js, el/opt/esc from drains.js.
 
 const pondingLayer = L.layerGroup();
-layerControl.addOverlay(pondingLayer, "Flood nowcast: streets + drains, 0–3 h (cm)");
+layerControl.addOverlay(pondingLayer, "Flood forecast, 0–3 h (depth in cm)");
 const pondingRenderer = L.canvas({ padding: 0.5 });
 
 const pondingState = { request: 0, data: null, step: 0, filter: "", shown: 300, sort: "soonest", timer: null };
