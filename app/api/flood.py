@@ -2,14 +2,15 @@
 forecast. The model is in app/services/forecast.py."""
 
 import asyncio
+import gzip
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 
 from app import config
 from app.errors import Unavailable
-from app.services import forecast, hydraulics, rainfall, terrain
+from app.services import compute, hydraulics, rainfall, terrain
 
 router = APIRouter(prefix="/data-collection", tags=["Flood"])
 
@@ -54,6 +55,7 @@ async def get_nowcast(lat: float = Query(..., ge=-90, le=90),
             summary="Coupled flood nowcast: when each street goes under, how deep, when it clears, "
                     "and which manholes surcharge; 5 minute steps, 3 hours")
 async def get_street_forecast(
+    request: Request,
     lat: float = Query(config.CHENNAI_CENTRE[0], ge=-90, le=90, description="Where to take the rainfall nowcast"),
     lon: float = Query(config.CHENNAI_CENTRE[1], ge=-180, le=180),
     rain_mm_h: float | None = RAIN_MM_H,
@@ -62,7 +64,11 @@ async def get_street_forecast(
     min_depth_cm: float = Query(config.REPORT_DEPTH_M * 100, ge=1, le=500),
     zone: str | None = Query(None, description="Only streets in this zone, e.g. N07"),
     ward: str | None = Query(None, description="Only streets in this ward, e.g. N082"),
-) -> dict[str, Any]:
+) -> Response:
     rain = await rainfall.report_steps(lat, lon, rain_mm_h)
-    return await asyncio.to_thread(forecast.street_forecast, rain, runoff_coeff, drain_condition,
-                                   min_depth_cm, zone, ward)
+    body = await compute.street_forecast_gz(rain, runoff_coeff, drain_condition, min_depth_cm, zone, ward)
+    # Sent as it was compressed when computed; every browser accepts gzip.
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(body, media_type="application/json",
+                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(gzip.decompress(body), media_type="application/json")

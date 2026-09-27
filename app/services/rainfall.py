@@ -5,6 +5,7 @@ global and updates hourly. A DWR feed would replace `nowcast` and nothing else, 
 everything downstream takes millimetres per hour on a clock.
 """
 
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,9 +19,26 @@ NOWCAST_URL = "https://api.open-meteo.com/v1/forecast"
 FEED_STEPS = config.NOWCAST_HOURS * 60 // config.FEED_STEP_MINUTES
 REPORT_STEPS = config.NOWCAST_HOURS * 60 // config.REPORT_STEP_MINUTES
 
+# The feed's own grid is about 0.1 degrees and it updates every 15 minutes: places
+# closer than that, asked within a few minutes, get the same answer without a new call.
+NOWCAST_TTL_S = 300
+_nowcasts: dict[tuple[float, float], tuple[float, dict[str, Any]]] = {}
+
 
 async def nowcast(lat: float, lon: float) -> dict[str, Any]:
     """Rainfall for the next three hours at a point, in the feed's 15 minute steps."""
+    cell = (round(lat, 1), round(lon, 1))
+    hit = _nowcasts.get(cell)
+    if hit and time.monotonic() - hit[0] < NOWCAST_TTL_S:
+        return hit[1]
+    answer = await _fetch_nowcast(*cell)
+    if len(_nowcasts) > 256:
+        _nowcasts.clear()
+    _nowcasts[cell] = (time.monotonic(), answer)
+    return answer
+
+
+async def _fetch_nowcast(lat: float, lon: float) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             response = await client.get(NOWCAST_URL, params={

@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from app import config, pages  # noqa: E402
 from app.api import drains, flood, navigation, streets, wards, weather  # noqa: E402
 from app.errors import ServiceError, service_error_handler  # noqa: E402
-from app.services import drain_network, forecast, routing, street_index  # noqa: E402
+from app.services import compute, drain_network, forecast, routing, street_index  # noqa: E402
 
 
 def _warm_flood_model() -> None:
@@ -38,15 +38,25 @@ def _warm_flood_model() -> None:
     routing.warm(forecast.surface_model())
 
 
+async def _start_forecasting() -> None:
+    # This process builds (or loads) the model first, so the workers find it on disk and
+    # never build it side by side; then the pool starts and computes the likely storms.
+    loop = asyncio.get_running_loop()
+    await asyncio.gather(loop.run_in_executor(None, drain_network.load_drains),
+                         loop.run_in_executor(None, _warm_flood_model))
+    compute.start(config.FORECAST_WORKERS)
+    await compute.precompute_forever()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Building the drain network and the flood model takes seconds from the disk cache
     # and minutes without it; doing it here, in the background, keeps it off the first
-    # request. Requests that arrive first wait on the same locks.
-    loop = asyncio.get_running_loop()
-    for job in (drain_network.load_drains, _warm_flood_model):
-        loop.run_in_executor(None, job)
+    # request. Requests that arrive first run in a thread until the pool is up.
+    task = asyncio.create_task(_start_forecasting())
     yield
+    task.cancel()
+    compute.stop()
 
 
 app = FastAPI(title="Chennai flood nowcast", lifespan=lifespan)

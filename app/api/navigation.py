@@ -6,8 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from app import config
 from app.api.flood import DRAIN_CONDITION, RAIN_MM_H, RUNOFF_COEFF
-from app.services import navigation, rainfall
+from app.services import compute, navigation, rainfall
 
 router = APIRouter(prefix="/data-collection", tags=["Navigation"])
 
@@ -30,5 +31,8 @@ async def get_route(
     algorithm: str = Query("astar", pattern="^(astar|dijkstra)$"),
 ) -> dict[str, Any]:
     rain = await rainfall.report_steps(from_lat, from_lon, rain_mm_h)
+    # The storm runs in the worker pool (or comes from its cache), and the route reads it.
+    await compute.street_forecast_gz(rain, runoff_coeff, drain_condition,
+                                     config.REPORT_DEPTH_M * 100, None, None)
     return await asyncio.to_thread(navigation.plan_route, (from_lat, from_lon), (to_lat, to_lon),
                                    leave_in_min, rain, runoff_coeff, drain_condition, algorithm)

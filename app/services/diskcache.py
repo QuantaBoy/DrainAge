@@ -9,6 +9,7 @@ rebuilt once. Delete the folder to force a rebuild.
 """
 
 import hashlib
+import os
 import pickle
 from pathlib import Path
 from typing import Any, Callable
@@ -42,8 +43,10 @@ def cached(name: str, inputs: list[Path], build: Callable[[], Any]) -> Any:
     value = build()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     for old in CACHE_DIR.glob(f"{name}-*.pkl"):
-        old.unlink(missing_ok=True)
-    tmp = path.with_suffix(".tmp")
+        if old != path:
+            old.unlink(missing_ok=True)
+    # Two processes building at once must not write into, or delete, each other's file.
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
     with tmp.open("wb") as fh:
         pickle.dump(value, fh, protocol=pickle.HIGHEST_PROTOCOL)
     tmp.replace(path)
