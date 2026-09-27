@@ -432,7 +432,7 @@ function drawPonding() {
     const minute = (step + 1) * data.rain.step_minutes;
     const clock = clockAt(step);
     pondingUi.clock.textContent = `${clock || "+" + minute + " min"}${clock ? ` · +${minute} min` : ""}`;
-    pondingUi.rainNow.textContent = `☂ ${data.rain.rain_mm_h[step]} mm/h`;
+    pondingUi.rainNow.textContent = `Rain ${data.rain.rain_mm_h[step]} mm/h`;
     const counts = data.per_step[step];
     window.shell?.kpis({ wet: counts.wet, blocked: counts.impassable, manholes: surcharging });
     const stat = (label, value) => {

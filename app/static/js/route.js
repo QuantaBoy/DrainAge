@@ -29,7 +29,7 @@ const routeUi = (() => {
         const input = document.createElement("input");
         Object.assign(input, { type: "search", placeholder, autocomplete: "off" });
         input.setAttribute("aria-label", label);
-        const pick = el("button", "chip route-pick", "📍 Map");
+        const pick = el("button", "chip route-pick", "Map");
         pick.type = "button";
         pick.title = `Pick the ${label.toLowerCase()} on the map`;
         row.append(input, pick);
