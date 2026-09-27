@@ -1383,3 +1383,56 @@ input:focus, select:focus, .top-search input:focus, #district:focus {
 }
 
 select, .sheet .drain-label select { font-weight: 500 !important; }
+
+/* ─── Guide: a spotlight on one part of the screen, and a card saying what it is ─── */
+.guide-open {
+    display: inline-flex; align-items: center; gap: .35rem; flex: none;
+    padding: .42rem .75rem; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card); color: var(--ink); font-size: .82rem; font-weight: 500;
+}
+.guide-open:hover { background: var(--accent-soft); }
+.guide-dim { position: fixed; inset: 0; z-index: 3000; background: rgba(25, 25, 25, .45); }
+.guide-spot {
+    position: fixed; z-index: 3000; border-radius: 8px; pointer-events: auto;
+    box-shadow: 0 0 0 9999px rgba(25, 25, 25, .45), 0 0 0 2px var(--card);
+    transition: left .25s cubic-bezier(.16, 1, .3, 1), top .25s cubic-bezier(.16, 1, .3, 1),
+                width .25s cubic-bezier(.16, 1, .3, 1), height .25s cubic-bezier(.16, 1, .3, 1);
+}
+.guide-card {
+    position: fixed; z-index: 3001; width: min(22rem, calc(100vw - 24px));
+    padding: 1.1rem 1.2rem 1rem;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .12);
+    animation: guide-in .3s cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes guide-in { from { opacity: 0; transform: translateY(8px); } }
+.guide-count {
+    font-family: var(--mono); font-size: .68rem; color: var(--muted);
+    letter-spacing: .06em; text-transform: uppercase;
+}
+.guide-title { margin: .3rem 0 .4rem; font-family: var(--serif); font-weight: 500; font-size: 1.3rem; letter-spacing: -.02em; line-height: 1.15; }
+.guide-text { margin: 0; font-size: .86rem; line-height: 1.6; color: var(--ink); }
+.guide-text b { font-weight: 600; }
+.guide-text i { font-style: normal; padding: 0 .3rem; border-radius: 4px; background: var(--accent-soft); }
+.guide-action {
+    width: 100%; margin-top: .8rem; padding: .55rem .8rem;
+    border: 1px solid var(--line); background: #EDF3EC; color: #346538; font-weight: 600; font-size: .84rem;
+}
+:root[data-theme=dark] .guide-action { background: #1F2C22; color: #9CC5A1; }
+.guide-foot { display: flex; justify-content: space-between; align-items: center; margin-top: .95rem; }
+.guide-nav { display: flex; gap: .4rem; }
+.guide-skip, .guide-back {
+    padding: .48rem .8rem; border: 1px solid transparent; background: transparent;
+    color: var(--muted); font-size: .84rem; font-weight: 500;
+}
+.guide-back { border-color: var(--line); color: var(--ink); }
+.guide-skip:hover, .guide-back:hover { background: var(--accent-soft); color: var(--ink); }
+.guide-next {
+    padding: .48rem 1rem; border: 0; background: var(--accent); color: var(--on-accent);
+    font-size: .84rem; font-weight: 600;
+}
+.guide-next:hover { opacity: .88; }
+.guide-card button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (max-width: 48rem) { .guide-open span { display: none; } .guide-open { padding: .45rem; } }
+@media (prefers-reduced-motion: reduce) { .guide-spot, .guide-card { transition: none; animation: none; } }
