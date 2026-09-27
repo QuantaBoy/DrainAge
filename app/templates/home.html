@@ -37,6 +37,10 @@
                 <span class="kpi manholes"><b id="kpi-manholes">–</b><small>manholes</small></span>
             </div>
         </div>
+        <button class="guide-open" id="guide-open" type="button" title="How to use this screen">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>
+            <span>Guide</span>
+        </button>
         <form class="top-search" id="top-search" role="search">
             <input id="top-search-input" type="search" placeholder="Search a street or area"
                    aria-label="Search a street or area" autocomplete="off">
@@ -189,4 +193,5 @@
     <script src="{{ url_for('static', path='js/flood.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/ponding.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/route.js') }}?v={{ asset_v }}"></script>
+    <script src="{{ url_for('static', path='js/guide.js') }}?v={{ asset_v }}"></script>
 {% endblock %}
