@@ -32,19 +32,21 @@
         <div class="status" aria-live="polite">
             <span id="mode-pill" class="mode-pill wait">Starting…</span>
             <div class="kpis" id="kpis">
-                <span class="kpi wet"><b id="kpi-wet">–</b><small>streets wet</small></span>
-                <span class="kpi blocked"><b id="kpi-blocked">–</b><small>impassable</small></span>
-                <span class="kpi manholes"><b id="kpi-manholes">–</b><small>manholes</small></span>
+                <span class="kpi wet" title="Named streets under water"><b id="kpi-wet">–</b><small>streets wet</small></span>
+                <span class="kpi blocked" title="Streets too deep to drive (over 30 cm)"><b id="kpi-blocked">–</b><small>impassable</small></span>
+                <span class="kpi manholes" title="Manholes overflowing"><b id="kpi-manholes">–</b><small>manholes</small></span>
             </div>
         </div>
-        <button class="guide-open" id="guide-open" type="button" title="How to use this screen">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>
-            <span>Guide</span>
-        </button>
-        <form class="top-search" id="top-search" role="search">
-            <input id="top-search-input" type="search" placeholder="Search a street or area"
-                   aria-label="Search a street or area" autocomplete="off">
-        </form>
+        <div class="top-actions">
+            <form class="top-search" id="top-search" role="search">
+                <input id="top-search-input" type="search" placeholder="Search a street or area"
+                       aria-label="Search a street or area" autocomplete="off">
+            </form>
+            <button class="guide-open" id="guide-open" type="button" title="How to use this screen">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>
+                <span>Guide</span>
+            </button>
+        </div>
 {% endblock %}
 
 {% block content %}
