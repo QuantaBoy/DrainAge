@@ -24,6 +24,7 @@ Settings go in `.env` at the project root (copy `.env.example`):
 | `OPENTOPOGRAPHY_API_KEY` | `scripts/fetch_dem.py` only |
 | `DEM_SOURCE` | Optional: which DEM to use (`GEDTM30`, `COP30`, `tiles`) |
 | `RELOAD` | Optional: `1` restarts the server when code changes |
+| `FORECAST_WORKERS` | Optional: CPU cores for flood forecasts (default: half the cores, at most 6; `0` runs them in the server process) |
 
 The first start builds the drain network, the terrain and the coupled model, which
 takes a few minutes. The result is saved in `app/data/cache/`, so later starts take

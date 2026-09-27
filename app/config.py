@@ -66,3 +66,6 @@ OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 DEM_SOURCE = os.getenv("DEM_SOURCE", "").strip()
 # Development server auto-reload; off unless asked for.
 RELOAD = os.getenv("RELOAD", "").lower() in {"1", "true", "yes"}
+# Worker processes for flood forecasts, one storm per core at a time. Each holds its
+# own copy of the city model (about 350 MB). Default: half the cores, at most 6.
+FORECAST_WORKERS = int(os.getenv("FORECAST_WORKERS", str(min(6, max(1, (os.cpu_count() or 2) // 2)))))
