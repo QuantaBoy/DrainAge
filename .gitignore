@@ -11,6 +11,8 @@ app/data/*
 !app/data/ward_points.json
 !app/data/building_fraction.npz
 !app/data/water_bodies.npz
+# The model's checked accuracy against the flood record (scripts/validate_history.py).
+!app/data/validation.json
 
 # OCR cache from digitise_wards.py
 .ward_ocr/
