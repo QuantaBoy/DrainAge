@@ -25,6 +25,9 @@ load_dotenv(ROOT_DIR / ".env")
 SURVEY_DIR = ROOT_DIR / "Cross-Checked Data"
 DRAIN_SURVEY_CSV = SURVEY_DIR / "gcc_storm_water_drains (1).csv"
 WARD_MAP_DIR = ROOT_DIR / "Ward"
+# Chennai's flood record (hazard zones, return-period extents, 2015 points): the
+# yardstick the model is checked against, and each street's flood history.
+HISTORY_DIR = ROOT_DIR / "Historical Flood"
 
 # Derived data, produced by the tools in scripts/.
 WARD_SHEETS_JSON = DATA_DIR / "ward_sheets.json"        # title blocks of the ward maps

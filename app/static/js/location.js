@@ -14,6 +14,10 @@ let accuracyCircle = null;
 const map = L.map("map", { zoomControl: false }).setView([13.05, 80.235], 12);
 // Top-left is the directions bar; zoom sits bottom-right, as in a maps app.
 L.control.zoom({ position: "bottomright" }).addTo(map);
+// The map credit keeps to the map's bottom edge, below the timeline, instead of riding
+// up with the zoom buttons that are lifted clear of it.
+map.getContainer().querySelector(".leaflet-control-container")
+    .append(map.attributionControl.getContainer());
 
 // The class is what dark mode inverts in CSS: only the base tiles, never the weather
 // overlays drawn on top of them.

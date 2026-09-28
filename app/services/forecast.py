@@ -26,7 +26,7 @@ from scipy.spatial import cKDTree
 
 from app import config
 from app.errors import Unavailable
-from app.services import channels, coupled, diskcache, drain_network, surface, terrain
+from app.services import channels, coupled, diskcache, drain_network, history, surface, terrain
 
 
 def surface_model() -> dict[str, Any]:
@@ -65,6 +65,7 @@ def warm() -> None:
     system = coupled_system()
     surface.street_cells(system["model"])
     _place_index()
+    history.grids(system["model"])
 
 
 # A run is six seconds of CPU; the map, the street table and the router ask for the
@@ -203,6 +204,7 @@ def _street_table(stretches: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "max_depth_cm": 0.0, "wet_m": 0.0, "stretches": 0, "_depth_x_m": 0.0,
                 "floods_at_min": None, "impassable_at_min": None,
                 "clears_at_min": 0, "series_cm": p["series_cm"],
+                "recorded": False, "flooded_2015": False, "hazard": None,
             }
         row["stretches"] += 1
         row["wet_m"] += p["wet_m"]
@@ -213,6 +215,14 @@ def _street_table(stretches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["clears_at_min"] = (None if row["clears_at_min"] is None or p["clears_at_min"] is None
                                 else max(row["clears_at_min"], p["clears_at_min"]))
         row["series_cm"] = [max(a, b) for a, b in zip(row["series_cm"], p["series_cm"])]
+        # The street's record: any stretch of it that the history backs.
+        past = p.get("history") or {}
+        row["recorded"] = row["recorded"] or p.get("recorded", False)
+        row["flooded_2015"] = row["flooded_2015"] or past.get("flooded_2015", False)
+        if past.get("hazard") and (row["hazard"] is None or
+                                   history.HAZARD_CLASSES.index(past["hazard"]) >
+                                   history.HAZARD_CLASSES.index(row["hazard"])):
+            row["hazard"] = past["hazard"]
         if p["max_depth_cm"] > row["max_depth_cm"]:
             row["max_depth_cm"] = p["max_depth_cm"]
             row["deepest"] = p["deepest"]
@@ -285,6 +295,7 @@ def street_forecast(rain: dict[str, Any], runoff_coeff: float, drain_condition: 
         config.IMPASSABLE_DEPTH_M)
     _label_places(stretches)
     _label_basins(stretches)
+    history.label_stretches(system["model"], stretches)
     if zone or ward:
         stretches = [f for f in stretches
                      if (not zone or f["properties"]["zone"] == zone)
@@ -327,6 +338,10 @@ def street_forecast(rain: dict[str, Any], runoff_coeff: float, drain_condition: 
         "wet_km": round(sum(r["wet_m"] for r in table) / 1000, 2),
         "surcharging_manholes": len(manholes),
         "per_step": per_step,
+        # Streets the flood record backs: they went under in 2015, lie in a frequent
+        # flood extent or a High hazard zone. The rest the model alone predicts.
+        "recorded_streets": sum(1 for r in named if r["recorded"]),
+        "validation": history.validation_summary(),
         "thresholds": {"reported_cm": min_depth_cm, "impassable_cm": impassable},
     }
 

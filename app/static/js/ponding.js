@@ -331,6 +331,7 @@ function stretchPopup(p, coords) {
             <tr><td>Impassable</td><td>${p.impassable_at_min == null ? "never over 30 cm" : "from " + whenLabel(p.impassable_at_min)}</td></tr>
             <tr><td>Peak</td><td>${p.max_depth_cm.toFixed(0)} cm at ${whenLabel(p.peak_at_min)}</td></tr>
             <tr><td>Clears</td><td>${p.clears_at_min == null ? "still wet at 3 h" : whenLabel(p.clears_at_min)}</td></tr>
+            <tr><td>History</td><td>${historyLine(p.history)}</td></tr>
             ${p.tunnel ? "<tr><td>Note</td><td>underpass: the DEM reads the road above, real water is deeper</td></tr>" : ""}
         </table>
         <div class="chart-title">Deepest water on this stretch, every 5 min</div>
@@ -444,6 +445,8 @@ function drawPonding() {
         el("div", "stats-head", "Over the whole 3 hours"),
         stat("Streets that go under", data.named_streets.toLocaleString()),
         stat("Of them impassable (30 cm+)", data.impassable_streets.toLocaleString()),
+        ...(data.recorded_streets != null
+            ? [stat("Backed by the flood record", data.recorded_streets.toLocaleString())] : []),
         stat("Road under water", `${data.wet_km} km`),
         stat("Manholes surcharging", data.surcharging_manholes.toLocaleString()),
         stat("Rain in total", `${data.rain.total_mm} mm`),
@@ -458,12 +461,28 @@ function drawPonding() {
             `${data.model.unsurveyed_design_mm_h} mm/h (assumed). ${data.model.blind_ends_to_ground?.toLocaleString?.() ?? "Some"} ` +
             `drains end with no mapped channel; their water is put on the ground there.`),
         el("p", "", massBalance(data.balance_m3)),
-        el("p", "note", "Not yet checked against a recorded flood: the order and timing streets flood " +
-            "in are the reliable output; depths over about 1 m are usually terrain error."),
+        validationNote(data.validation),
     );
     drawAlerts();
     drawRainChart();
     drawTable();
+}
+
+// The model's accuracy against Chennai's flood record, from scripts/validate_history.py.
+function validationNote(v) {
+    if (!v) {
+        return el("p", "note", "Not yet checked against a recorded flood: the order and timing streets " +
+            "flood in are the reliable output; depths over about 1 m are usually terrain error.");
+    }
+    const s = v.storms["30"] || Object.values(v.storms)[0];
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    return el("p", "note",
+        `Checked against the ${v.points_2015} places that flooded in December 2015: at 30 mm/h the model ` +
+        `floods a street within 250 m of ${pct(s.hit_rate_2015)} of them, against ${pct(s.chance_rate)} for ` +
+        `random street points, a margin that holds on zones it was not tuned on (+${pct(s.skill_holdout)}). ` +
+        `Streets in High hazard zones flood ${s.hazard_enrichment}x as often as others. Recorded depths ` +
+        `are matched only loosely (rank correlation ${s.depth_rank_correlation}): trust where and when, ` +
+        `treat exact centimetres as indicative.`);
 }
 
 // Where the runoff went, and how well the books close: the model's own audit.
@@ -477,6 +496,23 @@ function massBalance(b) {
 }
 
 // The Alerts tab: what goes under next, soonest first, and what is deepest now.
+// What the flood record says about a street: the forecast is backed by history when
+// the street went under in 2015, lies in a frequent flood extent or a High hazard zone.
+function historyTag(r) {
+    if (r.flooded_2015) return `<span class="hist-tag known">Flooded in 2015</span>`;
+    if (r.recorded) return `<span class="hist-tag known">Recorded hotspot${r.hazard ? ` · ${esc(r.hazard)} hazard` : ""}</span>`;
+    return `<span class="hist-tag new">New: not in the flood record</span>`;
+}
+
+function historyLine(h) {
+    if (!h) return "not available";
+    const parts = [];
+    if (h.flooded_2015) parts.push("flooded in December 2015");
+    if (h.return_period_years) parts.push(`in the ${h.return_period_years}-year flood extent`);
+    if (h.hazard) parts.push(`${h.hazard} hazard zone`);
+    return parts.length ? parts.join(" · ") : "no recorded flooding: the model alone predicts this";
+}
+
 function drawAlerts() {
     const data = pondingState.data;
     const step = pondingState.step;
@@ -498,7 +534,7 @@ function drawAlerts() {
         button.innerHTML = `<span class="alert-bar" style="background:${peak.color}"></span>
             <span class="alert-text"><b>${esc(r.street)}</b>
                 <small>${esc(r.locality || "")}${r.ward ? ` · ${esc(r.ward)}` : ""}</small>
-                <small>${sub}</small></span>
+                <small>${sub}</small>${historyTag(r)}</span>
             <span class="alert-badge ${badgeClass}">${badge}</span>`;
         button.addEventListener("click", () => {
             window.shell?.peek();

@@ -1576,3 +1576,27 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
 .route-panel > .drain-header { order: -2; }
 .route-panel > .route-result { order: -1; margin: 0 0 .8rem; }
 .route-panel > .route-result:empty { display: none; }
+
+/* Map credit: a thin strip on the map's bottom edge, under the timeline. */
+.leaflet-control-container > .leaflet-control-attribution {
+    position: absolute; right: 0; bottom: 0; z-index: 800; margin: 0;
+    padding: 1px 6px; font-size: .66rem; border-radius: 6px 0 0 0;
+    background: color-mix(in srgb, var(--card) 85%, transparent);
+}
+.timebar { bottom: 1.5rem; }
+.map-wrap .leaflet-bottom { bottom: 7.7rem; }
+@media (max-width: 48rem) {
+    .leaflet-control-container > .leaflet-control-attribution { bottom: calc(var(--nav-h) + var(--sheet-h)); }
+    .timebar { bottom: calc(var(--nav-h) + var(--sheet-h) + 1.3rem); }
+    .map-wrap .leaflet-bottom { bottom: calc(var(--nav-h) + var(--sheet-h) + 8.3rem); }
+}
+
+/* What the flood record says about a street, under its name in the alerts. */
+.hist-tag {
+    display: inline-block; align-self: flex-start; margin-top: .25rem; padding: .05rem .45rem;
+    border-radius: 9999px; font-size: .64rem; font-weight: 600; letter-spacing: .02em;
+}
+.hist-tag.known { background: #FDEBEC; color: #9F2F2D; }
+.hist-tag.new { background: #E1F3FE; color: #1F6C9F; }
+:root[data-theme=dark] .hist-tag.known { background: #3A1E1E; color: #E8A6A4; }
+:root[data-theme=dark] .hist-tag.new { background: #16293A; color: #8FC3E8; }

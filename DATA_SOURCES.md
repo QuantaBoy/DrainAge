@@ -45,10 +45,17 @@ source, and each was cross-checked against a second, independent one before use.
 
 Stated plainly, because the site is meant for real use:
 
-- **No flood depth or timing has been compared with a recorded flood.** Until a real
-  event is used (GCC waterlogging reports, Cyclone Michaung in December 2023,
-  December 2015), the reliable output is the order and timing in which streets flood,
-  not exact centimetres. Depths over about 1 m are usually DEM error.
+- **Checked against the flood record** (`scripts/validate_history.py`, results in
+  `app/data/validation.json`). At 30 mm/h the model floods a street within 250 m of 82%
+  of the 753 places that flooded in December 2015, against 42% for random street points;
+  the margin (+42 points) holds on the corporation zones held out of the choice of
+  settings. Streets in High and Very High hazard zones flood 7x as often as streets
+  outside any zone. The settings in use (runoff 0.75, drains as surveyed) were as good
+  as any other combination tried. Recorded depths match only loosely (rank correlation
+  0.17-0.25, and the source does not state its unit): the reliable output is where and
+  when streets flood, not exact centimetres; depths over about 1 m are usually DEM error.
+  The 2015 floods were worsened by the Chembarambakkam release and the rivers
+  overtopping, which this model (rain and drains) does not simulate.
 - **Outside the 92 sheets, drain sizes are unverified**: the CSV's sections are square.
   798 drains with no size at all take the typical measured section (0.88 x 0.70 m).
 - **4,045 drains end where no mapped canal or river takes over** (blind ends). Their water
