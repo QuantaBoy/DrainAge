@@ -2,21 +2,21 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "main.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.py"
+      "dest": "main.py"
     }
   ],
   "env": {
     "FORECAST_WORKERS": "0"
   },
   "functions": {
-    "api/index.py": {
+    "main.py": {
       "maxDuration": 60,
       "memory": 1024
     }
