@@ -1,24 +1,22 @@
 {
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "main.py",
-      "use": "@vercel/python"
+      "source": "/(.*)",
+      "destination": "/api/index.py"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "main.py"
-    }
-  ],
-  "env": {
-    "FORECAST_WORKERS": "0"
-  },
   "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "main.py": {
       "maxDuration": 60,
       "memory": 1024
     }
+  },
+  "env": {
+    "FORECAST_WORKERS": "0"
   }
 }
