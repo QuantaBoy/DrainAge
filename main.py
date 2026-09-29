@@ -7,6 +7,7 @@ and transparent error reporting for diagnostics.
 import os
 import sys
 import traceback
+import urllib.parse
 from pathlib import Path
 
 # Add project root directory to sys.path
@@ -15,11 +16,10 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 # On Vercel / serverless runtime:
-# 1. Disable multiprocessing workers so simulation runs in-process
 os.environ["FORECAST_WORKERS"] = "0"
 os.environ.setdefault("RELOAD", "false")
 
-# 2. Redirect disk cache to /tmp (the only writable directory in serverless runtime)
+# Redirect disk cache to /tmp
 try:
     from app import config
     config.CACHE_DIR = Path("/tmp/cache")
@@ -32,7 +32,6 @@ try:
 except Exception:
     pass
 
-# Try importing the application
 import_error = None
 fastapi_app = None
 
@@ -40,7 +39,33 @@ try:
     from app.main import app as _base_app
     fastapi_app = _base_app
     from fastapi import Request
+    from fastapi.responses import FileResponse, JSONResponse
     from app.pages import home
+
+    # Explicit direct static fallback to guarantee CSS/JS/images are served with exact MIME types
+    @fastapi_app.get("/static/{file_path:path}", include_in_schema=False)
+    async def vercel_static_file_fallback(file_path: str):
+        target = config.STATIC_DIR / file_path
+        if target.is_file():
+            media_type = "application/octet-stream"
+            suffix = target.suffix.lower()
+            if suffix == ".css":
+                media_type = "text/css"
+            elif suffix == ".js":
+                media_type = "application/javascript"
+            elif suffix == ".svg":
+                media_type = "image/svg+xml"
+            elif suffix == ".png":
+                media_type = "image/png"
+            elif suffix in (".jpg", ".jpeg"):
+                media_type = "image/jpeg"
+            elif suffix in (".json", ".geojson"):
+                media_type = "application/json"
+            elif suffix == ".ico":
+                media_type = "image/x-icon"
+            return FileResponse(target, media_type=media_type)
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Static asset not found")
 
     # Fallback routes for raw Vercel entrypoint paths
     @fastapi_app.api_route("/api/index.py", methods=["GET", "POST", "HEAD"], include_in_schema=False)
@@ -103,26 +128,23 @@ async def app(scope, receive, send):
 
     if scope["type"] == "http":
         path = scope.get("path", "")
+        query_bytes = scope.get("query_string", b"")
+        query_str = query_bytes.decode("latin-1") if isinstance(query_bytes, bytes) else str(query_bytes)
 
-        # Safely extract headers (whether bytes or str)
-        headers_dict = {}
-        for item in scope.get("headers") or []:
-            if len(item) == 2:
-                k, v = item
-                k_str = k.decode("latin-1").lower() if isinstance(k, bytes) else str(k).lower()
-                v_str = v.decode("latin-1") if isinstance(v, bytes) else str(v)
-                headers_dict[k_str] = v_str
+        target_path = None
+        if "__path__=" in query_str:
+            parsed_q = urllib.parse.parse_qs(query_str, keep_blank_values=True)
+            if "__path__" in parsed_q:
+                target_path = parsed_q.pop("__path__")[0]
+                new_query_str = urllib.parse.urlencode(parsed_q, doseq=True)
+                scope["query_string"] = new_query_str.encode("ascii")
 
-        matched_path = headers_dict.get("x-matched-path", "").strip()
-
-        # Normalize entrypoint rewritten paths
-        if path in ("/api/index.py", "/api/index", "/main.py", "/index.py", "/api", "/api/"):
-            if matched_path and matched_path not in (
-                "/api/index.py", "/api/index", "/main.py", "/index.py", "/api", "/api/"
-            ):
-                scope["path"] = matched_path
-            else:
-                scope["path"] = "/"
+        if target_path:
+            if not target_path.startswith("/"):
+                target_path = "/" + target_path
+            scope["path"] = target_path
+        elif path in ("/api/index.py", "/api/index", "/main.py", "/index.py", "/api", "/api/"):
+            scope["path"] = "/"
         elif path.startswith("/api/index.py/"):
             scope["path"] = path[len("/api/index.py"):]
         elif path.startswith("/main.py/"):
