@@ -55,6 +55,7 @@ def main() -> None:
 
     for name in ("app", "requirements.txt", "Dockerfile"):
         copy(ROOT / name, out / name)
+    copy(ROOT / "scripts" / "oracle_setup.sh", out / "oracle_setup.sh")
     copy(ROOT / "Cross-Checked Data", out / "Cross-Checked Data")
     if args.with_pdfs:
         copy(ROOT / "Ward", out / "Ward")

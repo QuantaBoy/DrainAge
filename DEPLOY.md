@@ -78,6 +78,51 @@ address, e.g. `https://drainout.vercel.app`.
   storm takes about 15-25 s the first time.
 - Phones share GPS only on HTTPS: both addresses are HTTPS, so "Use my location" works.
 
+## Engine on Oracle Cloud (always on, free)
+
+Oracle's Always Free tier gives a server that never sleeps, with far more memory than
+the engine needs. The pages stay on Vercel; only the engine moves.
+
+**Create the server (once, in the browser)**
+
+1. Sign up at https://www.oracle.com/cloud/free/ (a card is asked for identity; the
+   Always Free resources are not charged).
+2. Compute → Instances → **Create instance**. Image: **Ubuntu 24.04**. Shape:
+   **Ampere VM.Standard.A1.Flex**, 2 OCPU, 12 GB memory. If it says "out of capacity",
+   try another availability domain or try later.
+3. Under **Add SSH keys**, download the private key (save it as `oracle.key`).
+4. After it starts, copy its **Public IP address**.
+5. Open the instance's subnet → its **Security List** → **Add Ingress Rule**: source
+   `0.0.0.0/0`, TCP, destination ports `80,443`.
+
+**Send the engine to it (on this computer, PowerShell)**
+
+```sh
+python scripts/prepare_space.py --out ..\drainout-space --with-pdfs --with-history
+tar -czf ..\drainout-space.tgz -C ..\drainout-space .
+scp -i oracle.key ..\drainout-space.tgz ubuntu@<IP>:~
+ssh -i oracle.key ubuntu@<IP>
+```
+
+**Start it (on the server, in that SSH window)**
+
+```sh
+mkdir -p engine && tar -xzf drainout-space.tgz -C engine && cd engine
+OPENWEATHER_API_KEY=<your key> sh oracle_setup.sh
+```
+
+The first build takes several minutes. At the end it prints the engine's address,
+`https://<ip-with-dashes>.sslip.io` (free HTTPS, no domain needed).
+
+**Point the pages at it (on this computer)**
+
+```sh
+python scripts/build_frontend.py --engine https://<ip-with-dashes>.sslip.io
+npx -y vercel deploy web --prod --yes
+```
+
+To update the engine later, repeat "Send" and "Start".
+
 ## Running the engine from this computer (current setup)
 
 Hugging Face now charges for Docker Spaces, and Render's free plan (512 MB) is too small
