@@ -1,0 +1,51 @@
+"""Run the flood engine once and save its heaviest answers as files (app/snapshot.py),
+for GitHub Pages. Run by .github/workflows/snapshot.yml every half hour.
+
+    python scripts/snapshot.py --out site
+"""
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app import snapshot  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--out", required=True, type=Path)
+    out = parser.parse_args().out
+
+    jobs = {name: path for path, name in snapshot.FILES.items()}
+    for rate in (None, *snapshot.PRESET_RATES_MM_H):
+        for drain in snapshot.DRAIN_LEVELS:
+            query = f"?drain_condition={drain}" + (f"&rain_mm_h={rate}" if rate else "")
+            jobs[snapshot.forecast_file(rate, drain)] = snapshot.FORECAST_PATH + query
+
+    client = TestClient(app)          # no lifespan: nothing is computed ahead
+    failed = []
+    for name, url in jobs.items():
+        began = time.perf_counter()
+        response = client.get(url)
+        if response.status_code != 200:
+            print(f"FAILED {url}: {response.status_code} {response.text[:200]}", flush=True)
+            failed.append(url)
+            continue
+        target = out / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(response.content)
+        print(f"{name}: {len(response.content) / 2**20:.1f} MB in {time.perf_counter() - began:.0f} s", flush=True)
+    # A failed run publishes nothing, so the site keeps the last good answers.
+    if failed:
+        sys.exit(f"{len(failed)} of {len(jobs)} answers failed")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,47 @@
+# Runs the flood engine every half hour and publishes its answers on GitHub Pages,
+# where the Vercel site reads them (app/snapshot.py). Free for a public repository.
+name: Flood forecast snapshot
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # The built city model: minutes to build, seconds to load. Rebuilt only when
+      # its inputs change.
+      - uses: actions/cache@v4
+        with:
+          path: app/data/cache
+          key: model-${{ hashFiles('app/data/*.tif', 'app/data/dem/**', 'app/data/*.geojson', 'app/data/*.npz', 'Cross-Checked Data/**', 'Historical Flood/**', 'app/services/**') }}
+          restore-keys: model-
+      - run: python scripts/snapshot.py --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

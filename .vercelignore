@@ -49,3 +49,14 @@ Ward/
 certs/
 .ward_ocr/
 .osm_buildings/
+
+# The flood model's inputs: too big for a Vercel function with its libraries. The
+# model runs on GitHub Actions instead (app/snapshot.py).
+Historical Flood/
+app/data/*.tif
+app/data/dem/
+app/data/*.geojson
+app/data/cache/
+web/
+scripts/
+.github/

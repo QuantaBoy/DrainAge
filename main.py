@@ -18,6 +18,9 @@ if str(ROOT_DIR) not in sys.path:
 # On Vercel / serverless runtime:
 os.environ["FORECAST_WORKERS"] = "0"
 os.environ.setdefault("RELOAD", "false")
+# Where GitHub Actions publishes the engine's answers (app/snapshot.py): the model and
+# its data do not fit on Vercel, so its heaviest requests are answered from there.
+STATIC_DATA_URL = os.environ.get("STATIC_DATA_URL", "https://quantaboy.github.io/DrainAge").rstrip("/")
 
 # Redirect disk cache to /tmp
 try:
@@ -154,6 +157,22 @@ async def app(scope, receive, send):
 
         if not scope.get("path"):
             scope["path"] = "/"
+
+        from app import snapshot
+        query = dict(urllib.parse.parse_qsl(scope.get("query_string", b"").decode("latin-1")))
+        if name := snapshot.file_for(scope["path"], query):
+            await send({"type": "http.response.start", "status": 307,
+                        "headers": [(b"location", f"{STATIC_DATA_URL}/{name}".encode()),
+                                    (b"cache-control", b"public, max-age=60")]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+        if scope["path"] == "/data-collection/route":
+            body = (b'{"detail":"Safe routing needs the live flood engine, which this free site does '
+                    b'not run. The flood map and forecasts on this site are updated every 30 minutes."}')
+            await send({"type": "http.response.start", "status": 503,
+                        "headers": [(b"content-type", b"application/json")]})
+            await send({"type": "http.response.body", "body": body})
+            return
 
     try:
         await fastapi_app(scope, receive, send)
