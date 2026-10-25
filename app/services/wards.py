@@ -78,6 +78,9 @@ def ward_index() -> dict[str, Any]:
             "zone": zone,
             "zone_label": zone_label(zone),
             "map_url": f"/resources/ward-map/{number}" if number in files else None,
+            # The sheet cropped to its drains (scripts/make_ward_previews.py).
+            "preview_url": (f"/static/img/wards/{number}.webp"
+                            if (config.STATIC_DIR / "img" / "wards" / f"{number}.webp").exists() else None),
             "map_zone_label": zone_label(sheet["zone"]) if sheet and sheet["zone"] != zone else None,
             "drains": entry["drains"] if entry else 0,
             "length_km": round(entry["length_m"] / 1000, 2) if entry else 0.0,

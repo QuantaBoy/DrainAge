@@ -25,7 +25,7 @@ from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from app import config, pages  # noqa: E402
-from app.api import drains, flood, navigation, streets, wards, weather  # noqa: E402
+from app.api import drains, flood, navigation, streets, system, wards, weather  # noqa: E402
 from app.errors import ServiceError, service_error_handler  # noqa: E402
 from app.services import compute, drain_network, forecast, routing, street_index  # noqa: E402
 
@@ -39,12 +39,10 @@ def _warm_flood_model() -> None:
 
 
 async def _start_forecasting() -> None:
-    # This process builds (or loads) the model first, so the workers find it on disk and
-    # never build it side by side; then the pool starts and computes the likely storms.
+    # Build (or load) the model first, then compute the likely storms.
     loop = asyncio.get_running_loop()
     await asyncio.gather(loop.run_in_executor(None, drain_network.load_drains),
                          loop.run_in_executor(None, _warm_flood_model))
-    compute.start(config.FORECAST_WORKERS)
     await compute.precompute_forever()
 
 
@@ -52,11 +50,10 @@ async def _start_forecasting() -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Building the drain network and the flood model takes seconds from the disk cache
     # and minutes without it; doing it here, in the background, keeps it off the first
-    # request. Requests that arrive first run in a thread until the pool is up.
+    # request.
     task = asyncio.create_task(_start_forecasting())
     yield
     task.cancel()
-    compute.stop()
 
 
 app = FastAPI(title="Chennai flood nowcast", lifespan=lifespan)
@@ -64,7 +61,7 @@ app = FastAPI(title="Chennai flood nowcast", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_exception_handler(ServiceError, service_error_handler)
 for router in (weather.router, streets.router, drains.router, flood.router, wards.router,
-               navigation.router, pages.router):
+               navigation.router, system.router, pages.router):
     app.include_router(router)
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 

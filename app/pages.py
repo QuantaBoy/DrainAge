@@ -23,3 +23,8 @@ async def home(request: Request) -> HTMLResponse:
 @router.get("/resources", response_class=HTMLResponse)
 async def resources(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "resources.html")
+
+
+@router.get("/technology", response_class=HTMLResponse)
+async def technology(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "technology.html")

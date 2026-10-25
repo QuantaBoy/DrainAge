@@ -19,3 +19,7 @@ app/data/*
 .osm_buildings/
 
 .pytest_cache/
+
+# Built by scripts/build_frontend.py for Vercel.
+web/
+tunnel.log

@@ -460,6 +460,9 @@ function drawPonding() {
             `${data.model.unsurveyed_km2} km² has no surveyed drain and is given drains built for ` +
             `${data.model.unsurveyed_design_mm_h} mm/h (assumed). ${data.model.blind_ends_to_ground?.toLocaleString?.() ?? "Some"} ` +
             `drains end with no mapped channel; their water is put on the ground there.`),
+        el("p", "", `Not modelled: rivers and lakes overflowing their banks (the Adyar, the Cooum, ` +
+            `reservoir releases such as Chembarambakkam in 2015). ` +
+            `Streets beside them can flood deeper and longer than shown here.`),
         el("p", "", massBalance(data.balance_m3)),
         validationNote(data.validation),
     );

@@ -1,0 +1,414 @@
+% DRAIN OUT - Final Product Definition and Slide Content
+% Compile on Overleaf with pdfLaTeX. No external files needed.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[table]{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent]{hyperref}
+
+% ---------- Look ----------
+\definecolor{accent}{HTML}{0B5CAD}
+\definecolor{accent2}{HTML}{E8750A}
+\definecolor{soft}{HTML}{EEF3FA}
+\definecolor{ink}{HTML}{1B2330}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.7em}{}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{accent}\textbf{DRAIN OUT} \textperiodcentered{} Final Product}
+\rhead{\small Smart India Hackathon 2026}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlist{itemsep=2pt,topsep=3pt}
+\renewcommand{\arraystretch}{1.3}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+% A slide: title bar and the text that goes on it.
+\newtcolorbox{slide}[1]{enhanced,breakable,colback=white,colframe=accent,
+  coltitle=white,fonttitle=\bfseries\large,title={#1},arc=2pt,boxrule=0.8pt,
+  left=8pt,right=8pt,top=6pt,bottom=6pt,before skip=10pt,after skip=10pt}
+% A highlighted statement.
+\newtcolorbox{keyline}{colback=soft,colframe=accent,boxrule=0.5pt,arc=2pt,
+  left=8pt,right=8pt,top=5pt,bottom=5pt}
+% A labelled block inside a slide.
+\newcommand{\block}[1]{\par\smallskip{\color{accent2}\textbf{#1}}\par\smallskip}
+
+% =====================================================================
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par\vspace{0.6cm}
+  {\Huge\bfseries DRAIN OUT\par}
+  \vspace{0.3cm}
+  {\LARGE Final Product Definition\par}
+  \vspace{0.4cm}
+  {\large Street-Level Urban Flood Nowcasting \& Safe Routing\\ for Indian Cities\par}
+  \vspace{0.6cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par
+  \vspace{1.5cm}
+  \begin{tabular}{@{}ll@{}}
+    \textbf{Event}     & Smart India Hackathon 2026 \\
+    \textbf{Team}      & Tech Sprints \\
+    \textbf{Prototype} & \url{https://github.com/QuantaBoy/SIH26085} \\
+  \end{tabular}
+  \vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{The Final Product}
+
+\begin{keyline}
+\textbf{DRAIN OUT} is a national platform that forecasts urban flooding
+\textbf{street by street, 0--3 hours ahead, every 5 minutes}, detects overflowing
+drains and manholes before they overflow, and guides citizens and emergency services
+around the water. Any Indian city is onboarded from its own drainage records, without
+new code.
+\end{keyline}
+
+\subsection{Product modules}
+
+{\small
+\begin{longtable}{@{}p{0.6cm}p{3.6cm}p{11.8cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Module} & \textbf{What it delivers}\\
+\midrule\endhead
+1 & \textbf{Multi-source data ingestion} &
+  IMD Doppler weather radar and rain gauges (rainfall); CartoDEM / LiDAR (terrain);
+  city drainage records in GIS, CAD or scanned-map form; NRSC land use and soil maps;
+  INCOIS tide levels for coastal cities; IoT water-level sensors in drains and
+  underpasses; historical floods from NDMA, state disaster authorities and Sentinel-1
+  satellite flood maps.\\
+2 & \textbf{City onboarding engine} &
+  Turns any city's drainage records into a working drain network: digitises paper maps,
+  links drains into a network, infers flow direction from levels, auto-repairs missing
+  links and unsized drains, and corrects terrain to surveyed levels.\\
+3 & \textbf{Runoff model} &
+  SCS-CN runoff for unpaved land from soil and land-use maps; imperviousness-based runoff
+  for built-up areas.\\
+4 & \textbf{Coupled hydraulic engine} &
+  Drains and street surface simulated together: drain capacity (Manning), inlet capture,
+  overflow and backflow at manholes, water spreading over streets towards outlets, tide
+  level at coastal outfalls.\\
+5 & \textbf{AI layer} &
+  \textbf{ConvLSTM} trained on thousands of simulated storms and historical floods for
+  city-wide forecasts in milliseconds; \textbf{Historical Pattern Model} for recurrence
+  risk and new hotspots; \textbf{live correction} of the forecast from IoT sensor
+  readings.\\
+6 & \textbf{Risk and confidence} &
+  Flood probability and severity class for every street, from repeated runs with the
+  uncertain inputs varied.\\
+7 & \textbf{Decision support} &
+  Location-based early warnings; overflowing-manhole alerts; drain desilting priority
+  lists; traffic diversion and evacuation suggestions.\\
+8 & \textbf{Flood-safe routing} &
+  A* and Dijkstra routes around streets forecast to flood during the trip, with modes
+  for citizens, ambulances, fire services and traffic police.\\
+9 & \textbf{Delivery} &
+  GIS dashboard for city control rooms (Smart City ICCC); multilingual mobile app with
+  push and SMS alerts; open REST APIs; alerts in the Common Alerting Protocol (CAP) for
+  NDMA's SACHET system.\\
+\bottomrule
+\end{longtable}}
+
+\subsection{Performance targets}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Metric} & \textbf{Target}\\
+\midrule
+Spatial resolution & Every street, flood depth in cm\\
+Lead time & 0--3 hours, updated every 5 minutes\\
+City-wide forecast refresh & Under 1 minute\\
+Flood-safe route & Under 1 second\\
+Accuracy & Each city validated against its past floods before go-live\\
+Scale & One platform, many cities; each city is a data onboarding job\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Users}
+City corporations (urban local bodies) \textperiodcentered{} NDMA and state disaster
+management authorities \textperiodcentered{} traffic police \textperiodcentered{} 108
+ambulance and fire services \textperiodcentered{} citizens.
+
+% =====================================================================
+\section{How DRAIN OUT Addresses the Problem}
+
+\begin{keyline}
+\textbf{The problem.} Indian cities flood every monsoon, yet warnings name a city or a
+ward, arrive with little lead time, and say nothing about which street, how deep or
+when. Drains fail unseen until water is already on the road, desilting follows a fixed
+calendar, and ambulances, buses and commuters drive into flooded roads and underpasses
+because no one knows where the water will be.
+\end{keyline}
+
+\subsection{Problem to solution}
+
+{\small
+\begin{longtable}{@{}p{3.9cm}p{7.6cm}p{4.5cm}@{}}
+\toprule
+\textbf{Today's problem} & \textbf{How DRAIN OUT addresses it} & \textbf{Result}\\
+\midrule\endhead
+Warnings stop at city or ward level &
+  Coupled drainage + terrain simulation computes flood depth on \textbf{every street},
+  sampled every 20 m &
+  ``Anna Salai, 35 cm, 4:40 PM'' instead of ``heavy rain in Chennai''\\
+Little or no lead time; response is reactive &
+  Rainfall nowcast drives the model \textbf{0--3 hours ahead, updated every 5 minutes} &
+  Hours to act before water reaches the street\\
+Drain failures are invisible until overflow &
+  Every drain carries only its hydraulic capacity; the excess is traced to the
+  \textbf{exact manhole} it overflows from &
+  Overloaded drains and overflowing manholes known in advance\\
+Desilting follows a fixed calendar &
+  Drains ranked by how often and how badly they overflow across forecast storms &
+  \textbf{Risk-based desilting}: crews go where drains will fail\\
+Drainage records are incomplete, on paper or inconsistent &
+  City onboarding engine digitises maps, links drains, infers flow direction and
+  \textbf{auto-repairs missing links and unsized drains} &
+  Any city can go live from the records it already has\\
+Vehicles and ambulances drive into flooded roads &
+  \textbf{A* / Dijkstra routing} costs every road by its forecast depth during the trip;
+  roads over 30 cm are closed &
+  Safe routes for citizens, 108, fire and police, in under a second\\
+Recurring hotspots are not learned; climate shifts the risk &
+  \textbf{Historical Pattern Model} learns each city's recurring flood zones and is
+  refitted after every monsoon; streets flooding for the first time are flagged as
+  \textbf{new hotspots} &
+  Long-term planning targets the right places\\
+Physics models are too slow for city-wide real time &
+  \textbf{ConvLSTM trained on thousands of simulated storms} reproduces the physics in
+  milliseconds; the physics engine stays the reference &
+  City-wide refresh in under a minute, many cities at once\\
+Forecasts carry no sense of certainty &
+  Repeated runs with uncertain inputs varied give a \textbf{flood probability} per street &
+  Officials know which warnings are firm\\
+Departments work in silos &
+  One live picture on a \textbf{GIS dashboard}, \textbf{open APIs} and \textbf{CAP alerts}
+  to NDMA's SACHET &
+  City corporation, police, hospitals and disaster authorities act on the same forecast\\
+Citizens get generic alerts in one language &
+  \textbf{Location-based, multilingual} push and SMS alerts for the user's street and route &
+  Every citizen knows what it means for them\\
+\bottomrule
+\end{longtable}}
+
+\subsection{From rainfall to action: one storm, hour by hour}
+
+\begin{center}
+\begin{tabular}{@{}p{2.2cm}p{13.4cm}@{}}
+\toprule
+\textbf{When} & \textbf{What DRAIN OUT does}\\
+\midrule
+\textbf{T\,--\,3 h} & Radar shows heavy rain approaching. DRAIN OUT forecasts which
+  streets will flood, how deep and when, and which manholes will overflow.\\
+\textbf{T\,--\,2 h} & Control room sees the drains at risk; maintenance crews are sent
+  to clear the inlets and pumps that matter most.\\
+\textbf{T\,--\,1 h} & Citizens on affected streets receive alerts in their language;
+  traffic police set diversions; underpasses at risk are closed.\\
+\textbf{T\,0} & Ambulances, fire services and commuters follow flood-safe routes; the
+  forecast refreshes every 5 minutes as rain and sensor readings arrive.\\
+\textbf{After} & Flooded streets are logged; the historical model and calibration are
+  updated; drains that failed move up the desilting list for next season.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Why this works}
+\begin{itemize}
+  \item \textbf{It models the cause, not the symptom.} Street flooding happens when
+        drains run out of capacity; DRAIN OUT simulates the drains themselves, so it
+        knows where and when that happens.
+  \item \textbf{Physics and AI check each other.} Physics gives trusted answers; AI gives
+        speed and memory of past floods.
+  \item \textbf{It ends in an action, not a map.} Every output is something a person can
+        do: clean this drain, close this road, take this route.
+\end{itemize}
+
+% =====================================================================
+\section{Slide Content}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 1 \textendash{} Title Page}
+\begin{itemize}
+  \item \textbf{Problem Statement ID:} \emph{(fill in)}
+  \item \textbf{Problem Statement Title:} \emph{(fill in)}
+  \item \textbf{Theme:} \emph{(fill in)}
+  \item \textbf{PS Category:} Software
+  \item \textbf{Team ID:} \emph{(fill in)}
+  \item \textbf{Team Name:} Tech Sprints
+\end{itemize}
+\block{Subtitle}
+DRAIN OUT: Street-Level Urban Flood Nowcasting \& Safe Routing for Indian Cities
+\end{slide}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 2 \textendash{} Proposed Solution \& Unique Value Proposition}
+\block{Proposed Solution}
+\textbf{DRAIN OUT is a national platform that forecasts urban flooding street by street,
+0--3 hours ahead, and guides people and emergency services around it.}
+\begin{itemize}
+  \item \textbf{Coupled drainage + terrain simulation} predicts flood depth in
+        \textbf{cm on every street, every 5 minutes}.
+  \item \textbf{Onboards any Indian city}: drainage maps (GIS, CAD, scanned) become a
+        working drain network, with missing links auto-repaired.
+  \item \textbf{Physics-trained AI (ConvLSTM)} with a \textbf{historical pattern model}:
+        millisecond forecasts that learn each city's recurring flood zones.
+  \item Detects \textbf{overflowing manholes and overloaded drains}, turning fixed
+        desilting schedules into targeted ones.
+  \item \textbf{Flood-safe routing (A* / Dijkstra)} for citizens, ambulances and traffic
+        police.
+  \item Delivered through a \textbf{control-room GIS dashboard, a multilingual mobile app
+        and open APIs}, integrated with NDMA alerts.
+\end{itemize}
+
+\block{Unique Value Proposition}
+\begin{tabularx}{\linewidth}{@{}LL@{}}
+1.\ Street-level, not ward-level: depth in cm & 4.\ Manhole-level overflow and backflow detection\\
+2.\ Missing-link-aware drainage network & 5.\ One platform, any Indian city\\
+3.\ Physics + AI + historical memory & 6.\ Flood-safe routing in under a second\\
+\end{tabularx}
+
+\block{DRAIN OUT Addresses the Problem By}
+\begin{tabularx}{\linewidth}{@{}p{5.2cm}L@{}}
+\textbf{Street-level prediction} & Flood depth in cm on every street, 0--3 hours ahead, every 5 minutes\\
+\textbf{Drain failure foresight} & Overloaded drains and overflowing manholes identified before they overflow\\
+\textbf{Flood-aware rerouting} & Traffic, ambulances and fire services routed around flooded roads, reducing loss of life and congestion\\
+\textbf{Targeted action} & Location-based multilingual alerts, and desilting sent where drains will fail\\
+\end{tabularx}
+\end{slide}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 3 \textendash{} Technical Approach}
+\begin{enumerate}[label=\textbf{\arabic*.}]
+  \item \textbf{Data collection:} IMD Doppler radar and rain gauges \textperiodcentered{}
+        CartoDEM / LiDAR \textperiodcentered{} city drainage records \textperiodcentered{}
+        NRSC land use and soil (SCS-CN) \textperiodcentered{} INCOIS tide levels
+        \textperiodcentered{} historical floods (NDMA, Sentinel-1) \textperiodcentered{}
+        IoT water-level sensors
+  \item \textbf{City onboarding (preprocessing):} digitise $\rightarrow$ build drain
+        network $\rightarrow$ auto-repair gaps $\rightarrow$ infer flow direction
+        $\rightarrow$ correct terrain to surveyed levels
+  \item \textbf{Physics layer:} SCS-CN runoff $\rightarrow$ drain capacity
+        $Q_{cap} = \frac{1}{n} A R^{2/3} S^{1/2}$ $\rightarrow$ drains and street surface
+        simulated together $\rightarrow$ overflow and backflow at manholes
+  \item \textbf{AI layer:} ConvLSTM trained on simulated storms and historical floods
+        \textperiodcentered{} Historical Pattern Model \textperiodcentered{} live correction
+        from sensors \textperiodcentered{} flood probability per street
+  \item \textbf{Decision support:} early warnings \textperiodcentered{} desilting priority
+        \textperiodcentered{} diversions \textperiodcentered{} flood-safe routing
+        (A* / Dijkstra)
+  \item \textbf{Delivery:} GIS dashboard (ICCC) \textperiodcentered{} mobile app
+        \textperiodcentered{} REST APIs \textperiodcentered{} NDMA SACHET (CAP) alerts
+\end{enumerate}
+
+\block{Outputs}
+Street-level depth (cm) \textperiodcentered{} nowcast 0--3 h at 5-minute steps
+\textperiodcentered{} flood risk and severity \textperiodcentered{} overflowing manholes
+\textperiodcentered{} flood-safe routes
+
+\block{Tech Stack}
+Python \textperiodcentered{} FastAPI \textperiodcentered{} NumPy / SciPy
+\textperiodcentered{} PyTorch (ConvLSTM) \textperiodcentered{} PostGIS
+\textperiodcentered{} Leaflet / GIS \textperiodcentered{} Docker (cloud deployment)
+
+\block{Prototype}
+Working city-wide pilot on Chennai: \url{https://github.com/QuantaBoy/SIH26085}
+\end{slide}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 4 \textendash{} Feasibility and Viability}
+\block{Feasibility Analysis}
+\begin{tabularx}{\linewidth}{@{}p{3.2cm}L@{}}
+\toprule
+\textbf{Data} & Every input has a national source: IMD, NRSC, Copernicus, INCOIS, NDMA, city drainage records.\\
+\textbf{Modelling} & Built on established engineering methods: Manning, SCS-CN, CPHEEO, HEC-22.\\
+\textbf{AI} & Trained on simulated storms, so it does not depend on scarce flood records.\\
+\textbf{Scalability} & The same pipeline for every city; a new city is data onboarding, not new code.\\
+\textbf{Integration} & Open APIs connect to Smart City command centres, 108, traffic police and NDMA alerts.\\
+\bottomrule
+\end{tabularx}
+
+\block{Viability: Challenge $\rightarrow$ Mitigation}
+\begin{tabularx}{\linewidth}{@{}p{4.4cm}L@{}}
+\toprule
+\textbf{Incomplete drainage records} & Auto-repair of missing links plus digitisation of paper maps\\
+\textbf{Validation} & Each city tested against its past floods before go-live\\
+\textbf{Model drift over years} & Recalibrated after every monsoon; historical model refitted on recent years\\
+\textbf{Multi-agency integration} & Standard REST and CAP alert formats\\
+\textbf{Nationwide scale} & Cloud deployment; one platform serving many cities\\
+\bottomrule
+\end{tabularx}
+
+\block{Viability Statement}
+DRAIN OUT is viable because it combines nationally available data with established
+hydraulic engineering and AI in one modular pipeline that is validated on each city's
+past floods and scaled city by city.
+\end{slide}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 5 \textendash{} Impact and Benefits}
+\begin{tabularx}{\linewidth}{@{}p{3.2cm}L@{}}
+\toprule
+\textbf{Safety} & Street-level warnings up to 3 hours ahead; flood-safe routes for citizens and emergency vehicles.\\
+\textbf{Economic} & Less property and vehicle damage; desilting spent where drains actually overflow.\\
+\textbf{Urban planning} & Recurring flood hotspots and undersized drains identified for long-term investment.\\
+\textbf{Operational} & One shared picture for city corporations, disaster authorities, traffic police and hospitals.\\
+\bottomrule
+\end{tabularx}
+
+\block{Core Impact}
+Street-level early warning and safe mobility for India's flood-prone cities.
+
+\block{Users}
+City corporations \textperiodcentered{} NDMA / state disaster authorities
+\textperiodcentered{} traffic police \textperiodcentered{} 108 ambulance and fire
+services \textperiodcentered{} citizens
+
+\block{Sustainable Development Goals}
+SDG 3 Good Health \textperiodcentered{} SDG 9 Industry \& Infrastructure
+\textperiodcentered{} SDG 11 Sustainable Cities \textperiodcentered{} SDG 13 Climate
+Action
+\end{slide}
+
+% ---------------------------------------------------------------------
+\begin{slide}{Slide 6 \textendash{} Research and References}
+{\small
+\begin{tabularx}{\linewidth}{@{}p{3.3cm}p{4.2cm}L@{}}
+\toprule
+\textbf{Source} & \textbf{Work} & \textbf{Gap DRAIN OUT fills}\\
+\midrule
+Ministry of Earth Sciences & I-FLOWS Mumbai & Ward-level alerts $\rightarrow$ street-level depth in cm\\
+NCCR & C-FLOWS Chennai & Precomputed scenarios $\rightarrow$ live simulation every 5 min\\
+NDMA & Urban Flooding Guidelines (2010) & Guidelines $\rightarrow$ an operational forecasting tool\\
+MoHUA / CPHEEO & Storm Water Drainage Manual (2019) & Design standard $\rightarrow$ real-time drain load\\
+FHWA & HEC-22 Urban Drainage Design & Inlet capture applied to live forecasting\\
+IMD & Doppler Weather Radar network & Radar rainfall $\rightarrow$ street-level flood depth\\
+\bottomrule
+\end{tabularx}}
+
+\smallskip
+\textbf{Note:} put a source under every chart, and replace every ``LINK'' with the real URL.
+\end{slide}
+
+\end{document}

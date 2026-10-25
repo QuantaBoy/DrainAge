@@ -27,12 +27,35 @@
         field.input.dispatchEvent(new Event("input"));           // forget the old place
     }
 
+    // No start typed and no location known yet: say so in the box, and offer the GPS.
+    function needStart() {
+        from.value = "";
+        from.placeholder = "Type a start, or allow your location";
+        bar.classList.add("open", "need-start");
+        from.focus();
+        document.getElementById("use-location")?.click();
+    }
+    from.addEventListener("input", () => bar.classList.remove("need-start"));
+
+    // While the bar fills the Route panel, the panel must not copy itself back into the
+    // bar: that would wipe the destination before it is read.
+    let filling = false;
+
     function go(event) {
         event?.preventDefault();
-        if (!to.value.trim()) { to.focus(); return; }
-        fill(routeUi.from, from.value.trim(), true);
-        fill(routeUi.to, to.value.trim(), false);
-        routeUi.leave.value = leave.value;
+        const start = from.value.trim();
+        const destination = to.value.trim();
+        if (!destination) { to.focus(); return; }
+        const haveHere = typeof marker !== "undefined" && marker;
+        if (!start && !haveHere) { needStart(); return; }
+        filling = true;
+        try {
+            fill(routeUi.from, start, true);
+            fill(routeUi.to, destination, false);
+            routeUi.leave.value = leave.value;
+        } finally {
+            filling = false;
+        }
         routeUi.go.click();
         bar.classList.remove("open");
         to.blur(); from.blur();
@@ -46,6 +69,7 @@
 
     // Places picked on the map, or typed in the Route panel, show up here too.
     const mirror = () => {
+        if (filling) return;
         if (document.activeElement !== from) from.value = routeUi.from.input.value;
         if (document.activeElement !== to) to.value = routeUi.to.input.value;
         leave.value = routeUi.leave.value;

@@ -79,15 +79,6 @@ def _run_key(rain: dict[str, Any], runoff_coeff: float, drain_condition: float) 
     return (tuple(round(r, 4) for r in rain["rain_mm"]), round(runoff_coeff, 4), round(drain_condition, 4))
 
 
-def remember_run(rain: dict[str, Any], runoff_coeff: float, drain_condition: float,
-                 run: dict[str, Any]) -> None:
-    """Keep a run computed elsewhere (a worker process), so this process never repeats it."""
-    with _run_lock:
-        _runs[_run_key(rain, runoff_coeff, drain_condition)] = run
-        if len(_runs) > _RUNS_KEPT:
-            _runs.popitem(last=False)
-
-
 def run_storm(rain: dict[str, Any], runoff_coeff: float, drain_condition: float) -> dict[str, Any]:
     """The coupled model for one storm, cached by its rain and settings."""
     key = _run_key(rain, runoff_coeff, drain_condition)

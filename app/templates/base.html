@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0c0f15">
     <title>{% block title %}SIH26085{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232F3437%22/%3E%3Cpath d=%22M16 7s7 7.6 7 13a7 7 0 0 1-14 0c0-5.4 7-13 7-13z%22 fill=%22%23fff%22/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet"
@@ -37,6 +38,7 @@
         <nav class="nav" aria-label="Primary">
             <a href="/" {% if path == "/" %}aria-current="page"{% endif %}>Dashboard</a>
             <a href="/resources" {% if path.startswith("/resources") %}aria-current="page"{% endif %}>Resources</a>
+            <a href="/technology" {% if path.startswith("/technology") %}aria-current="page"{% endif %}>Technology</a>
         </nav>
 
         {% block controls %}{% endblock %}

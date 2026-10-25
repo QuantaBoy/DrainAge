@@ -4,101 +4,153 @@
 {% block shell %}page{% endblock %}
 
 {% block content %}
-    <section class="res-head">
-        <h1>Resources</h1>
-        <p>The wards behind the model. Each card is one ward of the Greater Chennai Corporation:
-           the figures come from the drain survey and the hydraulic model, and the base map
-           opens the ward's GCC / SECON-JBA storm water drain survey sheet (December 2020).</p>
+    <!-- ── Ward maps first: the surveyed drain network, ward by ward ── -->
+    <section class="wm-hero" aria-labelledby="wm-title">
+        <div class="wm-collage" id="wm-collage" aria-hidden="true"></div>
+        <h1 class="wm-giant" id="wm-title">Ward Maps</h1>
+        <form class="wm-bar" id="wm-search-form" role="search">
+            <p class="wm-bar-title">Every ward, drain by drain</p>
+            <label class="wm-search">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="wm-search" type="search" placeholder="Search ward number or zone"
+                       aria-label="Search wards" autocomplete="off">
+            </label>
+            <button type="submit" class="wm-search-go">Search</button>
+        </form>
     </section>
 
-    <section class="src" aria-labelledby="src-title">
-        <h2 id="src-title">Data sources, and what each was checked against</h2>
-        <p class="src-lead">Every layer the model runs on is real data from a named source. Each one
-           was cross-checked against a second, independent source before it was used, and where two
-           sources disagree the site reports the disagreement rather than quietly picking one.</p>
+    <section class="wm-shop" aria-label="Ward catalogue">
+        <aside class="wm-side" aria-label="Filter wards">
+            <h2>Zone</h2>
+            <ul class="wm-zones" id="wm-zones"></ul>
+            <h2>Show</h2>
+            <label class="wm-check"><input type="checkbox" id="wm-map-only" checked> With a base map</label>
+            <h2>Sort by</h2>
+            <select id="wm-sort" aria-label="Sort wards">
+                <option value="number">Ward number</option>
+                <option value="drains">Most drains</option>
+                <option value="poor">Most in poor condition</option>
+                <option value="capacity">Largest drain capacity</option>
+            </select>
+        </aside>
 
-        <ul class="src-grid">
-            <li class="src-card">
-                <h3>Terrain <span>DEM</span></h3>
-                <p class="src-from">GEDTM30, 1 arc-second (about 30 m) bare earth, from
-                   <a href="https://portal.opentopography.org/datasets" target="_blank" rel="noopener">
-                   OpenTopography</a>.</p>
-                <p class="src-check"><b>Checked against</b> Copernicus COP30 over the same area, and an
-                   independent elevation point file.</p>
-                <p class="src-found">COP30 sits 1.00 m above GEDTM30 on land (median), the expected gap
-                   between a surface model and bare earth. The point file is ellipsoidal: 92.1 m below the
-                   DEM, where the EGM2008 geoid is -92.03 m, so it confirms the heights are above mean sea
-                   level. Against the ward sheets' surveyed road levels at 4,523 manholes, GEDTM30 stands
-                   higher the denser the buildings; that part is taken off, which halves the
-                   manhole-to-manhole spread of the error (2.93 m to 1.68 m). OpenStreetMap buildings leave
-                   water room only between them, and small deep pits are filled unless a mapped tank or
-                   lake is there.</p>
-            </li>
+        <div class="wm-main">
+            <div class="wm-count" id="wm-count" aria-live="polite">Loading wards…</div>
+            <div class="wm-grid" id="wm-grid"></div>
+            <nav class="wm-pages" id="wm-pages" aria-label="Pages"></nav>
+        </div>
+    </section>
 
-            <li class="src-card">
-                <h3>Drainage network <span>10,240 drains</span></h3>
-                <p class="src-from">The GCC storm water drain survey, 2,219 km with sections, invert
-                   levels, ward and zone
-                   (<a href="https://data.opencity.in/dataset/chennai-stormwater-drain-swd-maps"
-                       target="_blank" rel="noopener">Chennai SWD maps, OpenCity</a>).</p>
-                <p class="src-check"><b>Checked against</b> the GCC / SECON-JBA ward base-map survey:
-                   7,951 manholes read from the 92 sheets, with invert, road-edge level, width and depth.</p>
-                <p class="src-found">Ward and zone agree in 90 of 91 wards (ward 33 differs; ward 35 has no
-                   drains in the survey). The two are separate surveys: at the same manholes their inverts
-                   differ by a median 0.63 m, and the CSV's sections are square where the sheets' are not.
-                   The sheets' own drawn network - 12,566 drains, 1,010 km, measured sections and inverts,
-                   flow direction from the surveyors' arrows - replaces the CSV wherever the sheets reach.</p>
-            </li>
+    <section class="wm-picks" aria-labelledby="wm-picks-title">
+        <div class="wm-picks-head">
+            <h2 id="wm-picks-title">Wards needing attention</h2>
+            <div class="wm-arrows">
+                <button type="button" id="wm-prev" aria-label="Previous">
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"/></svg></button>
+                <button type="button" id="wm-next" aria-label="Next">
+                    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            </div>
+        </div>
+        <p class="wm-picks-lead">The wards whose surveyed drains are most often in poor condition: silted, broken or
+           blocked. The first places to clean before the monsoon.</p>
+        <div class="wm-rail" id="wm-rail"></div>
+    </section>
 
-            <li class="src-card">
-                <h3>Street mapping <span>80,206 roads</span></h3>
-                <p class="src-from"><a href="https://www.openstreetmap.org/" target="_blank"
-                   rel="noopener">OpenStreetMap</a>, with its rivers, canals and nullahs used to keep
-                   channels draining in the DEM.</p>
-                <p class="src-check"><b>Checked against</b> OpenStreetMap's own bridge tags, and against
-                   depths measured on the DEM with and without the waterways.</p>
-                <p class="src-found">1,011 bridges are left out of flooding, because the DEM under a
-                   bridge is the river below it. Burning the 574 mapped waterways into the DEM removes
-                   false canal "lakes": 5th Street, Kilpauk drops from 212 cm to 51 cm.</p>
-            </li>
+    <section class="wm-band" aria-label="The ward survey">
+        <div>
+            <h2>Drawn manhole by manhole.<br>Read by machine.</h2>
+            <a class="wm-band-link" href="#cat-title">See every dataset ↓</a>
+        </div>
+        <dl class="wm-band-stats" id="wm-band-stats">
+            <div><dt>Ward sheets</dt><dd>92</dd></div>
+            <div><dt>Manholes read</dt><dd>7,951</dd></div>
+            <div><dt>Drains drawn</dt><dd>12,566</dd></div>
+            <div><dt>Surveyed</dt><dd>Dec 2020</dd></div>
+        </dl>
+    </section>
 
-            <li class="src-card">
-                <h3>Rainfall <span>stands in for IMD Doppler radar</span></h3>
-                <p class="src-from"><a href="https://open-meteo.com/" target="_blank" rel="noopener">
-                   Open-Meteo</a>: 15-minute precipitation drives the flood forecast, hourly drives the
-                   rain-movement map.</p>
-                <p class="src-check"><b>Checked against</b> each other, by summing the 15-minute values
-                   into hours.</p>
-                <p class="src-found">The two agree hour for hour, as they should from one provider. The
-                   check also caught a clock error, where the 15-minute feed can start behind the real
-                   time. An IMD Doppler feed would replace this one function and nothing else.</p>
-            </li>
+    <dialog class="wm-dialog" id="wm-dialog" aria-labelledby="wm-d-title">
+        <button type="button" class="wm-d-close" id="wm-d-close" aria-label="Close">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <div class="wm-d-body" id="wm-d-body"></div>
+    </dialog>
+
+    <!-- ── Then every dataset behind the forecast ── -->
+    <section class="rs-hero">
+        <p class="rs-eyebrow">Datasets</p>
+        <h2 class="rs-hero-title">Every dataset behind the forecast, and what we did with it</h2>
+        <p class="rs-lead">The flood model runs only on real, named data. Each dataset below was gathered
+           from its source, cleaned or digitised, checked against a second independent source, and then
+           put to one job in the model. Whether each file is on this server is checked live.</p>
+        <dl class="rs-stats" id="rs-stats" aria-live="polite">
+            <div><dt>Datasets on this server</dt><dd id="st-found">–</dd></div>
+            <div><dt>Data gathered</dt><dd id="st-size">–</dd></div>
+            <div><dt>Live data services</dt><dd id="st-services">–</dd></div>
+            <div><dt>Real flood places matched</dt><dd id="st-check">–</dd></div>
+        </dl>
+    </section>
+
+    <section class="rs-flow" aria-labelledby="flow-title">
+        <h2 id="flow-title" class="rs-h2">From raw data to forecast</h2>
+        <ol class="rs-steps">
+            <li><span class="rs-step-no">1</span><h3>Gathered</h3>
+                <p>Government surveys, 92 scanned ward maps, satellite terrain, OpenStreetMap and the
+                   city's flood record: 16 datasets and 5 live services.</p></li>
+            <li><span class="rs-step-no">2</span><h3>Digitised and cleaned</h3>
+                <p>Ward maps read by OCR, drains joined into one network, the terrain corrected to surveyed
+                   road levels, bridges and false "lakes" removed.</p></li>
+            <li><span class="rs-step-no">3</span><h3>Cross-checked</h3>
+                <p>Every layer tested against a second, independent source; where two disagree, the
+                   disagreement is reported, not hidden.</p></li>
+            <li><span class="rs-step-no">4</span><h3>Used in the model</h3>
+                <p>Each dataset has one job: where water runs, what the drains carry, which streets flood,
+                   and how the forecast compares with past floods.</p></li>
+        </ol>
+    </section>
+
+    <section class="rs-catalogue" aria-labelledby="cat-title">
+        <div class="rs-cat-head">
+            <h2 id="cat-title" class="rs-h2">Dataset catalogue</h2>
+            <div class="rs-cat-tools">
+                <input id="ds-search" type="search" placeholder="Search datasets" aria-label="Search datasets"
+                       autocomplete="off">
+                <button type="button" id="ds-expand" class="rs-ghost">Open all</button>
+            </div>
+        </div>
+        <div class="rs-chips" id="ds-chips" role="tablist" aria-label="Dataset categories"></div>
+        <div class="rs-list" id="ds-list" aria-live="polite"></div>
+    </section>
+
+    <section class="rs-limits" aria-labelledby="lim-title">
+        <h2 id="lim-title" class="rs-h2">What is still uncertain</h2>
+        <ul>
+            <li><b>Exact depth.</b> Where and when streets flood matches the record well; exact centimetres
+                only loosely, because the terrain is 30 m and the recorded depths state no unit.</li>
+            <li><b>Rivers and tide.</b> The 2015 floods were worsened by the Chembarambakkam release and the
+                rivers overtopping, which this rain-and-drains model does not simulate.</li>
+            <li><b>Drain sizes outside the 92 ward maps</b> come from the city survey, which records almost
+                every section as square; 798 drains with no size take the typical measured one.</li>
+            <li><b>A constant 2.87 m</b> between the ward maps' levels and the terrain is unexplained and not
+                applied; it does not change where water runs.</li>
         </ul>
-
-        <p class="src-note"><b>Not yet checked:</b> no flood depth or timing has been compared with a
-           recorded flood, so the order and timing in which streets flood are the trustworthy output,
-           not exact centimetres. Most drain sizes are unverified; the sheets' levels and the DEM
-           differ by an unexplained constant 2.87 m, not applied; and ward boundaries are inferred from
-           the nearest surveyed drain.</p>
     </section>
 
-    <section class="res-tools" aria-label="Filter wards">
-        <input id="ward-search" type="search" placeholder="Search ward number or zone name"
-               aria-label="Search wards" autocomplete="off">
-        <select id="ward-zone" aria-label="Zone">
-            <option value="">All zones</option>
-        </select>
-        <label class="res-check">
-            <input id="ward-map-only" type="checkbox" checked> Base map only
-        </label>
-        <span id="ward-count" aria-live="polite"></span>
-    </section>
-
-    <section id="ward-grid" class="ward-grid" aria-label="Wards">
-        <p class="ward-empty">Loading wards…</p>
-    </section>
+    <footer class="wm-foot">
+        <div class="wm-foot-cols">
+            <div><h3>Explore</h3><a href="/">Flood dashboard</a><a href="/technology">Technology</a>
+                <a href="#wm-title">Ward maps</a><a href="#cat-title">Datasets</a></div>
+            <div><h3>Sources</h3>
+                <a href="https://data.opencity.in/dataset/chennai-stormwater-drain-swd-maps" target="_blank" rel="noopener">GCC drain survey</a>
+                <a href="https://portal.opentopography.org/datasets" target="_blank" rel="noopener">OpenTopography</a>
+                <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>
+                <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></div>
+        </div>
+        <p class="wm-foot-note">Ward base maps: Greater Chennai Corporation / SECON-JBA storm water drain survey,
+           December 2020. Map data © OpenStreetMap contributors.</p>
+    </footer>
 {% endblock %}
 
 {% block scripts %}
+    <script src="{{ url_for('static', path='js/datasets.js') }}?v={{ asset_v }}"></script>
     <script src="{{ url_for('static', path='js/resources.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

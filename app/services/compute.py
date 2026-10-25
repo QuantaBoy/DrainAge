@@ -1,12 +1,7 @@
-"""Flood forecasts on every core: a pool of worker processes, each holding the city
-model, and a cache of finished answers.
+"""Flood forecasts and a cache of finished answers.
 
-One storm cannot be split across cores - each minute of the simulation needs the
-minute before it - so speed comes from running different storms at once and from never
-running the same one twice:
+Speed comes from never running the same storm twice:
 
-  * Worker processes each load the coupled model once (seconds, from the disk cache)
-    and then run storms side by side, one per core.
   * A finished answer is kept as compressed JSON, so a repeat request is sent as it
     is, with no simulation, no table building and no serialising.
   * Requests for a storm already being computed wait for that run instead of starting
@@ -14,8 +9,7 @@ running the same one twice:
   * The storms people ask for first - the live forecast and the what-if presets - are
     computed ahead, at start-up and whenever the rain feed updates.
 
-A city is one model; a nationwide deployment runs one of these per city, each with
-its own pool, behind one API (docs/technical_approach.tex).
+A city is one model; a nationwide deployment runs one of these per city behind one API (docs/technical_approach.tex).
 """
 
 import asyncio
@@ -23,10 +17,11 @@ import gzip
 import hashlib
 import json
 import logging
-import os
+import time
 from collections import OrderedDict
-from concurrent.futures import ProcessPoolExecutor
 from typing import Any
+
+import psutil
 
 from app import config
 
@@ -36,7 +31,20 @@ log = logging.getLogger("uvicorn.error")
 _ANSWERS_KEPT = 24
 _answers: "OrderedDict[str, bytes]" = OrderedDict()
 _running: dict[str, asyncio.Future] = {}
-_pool: ProcessPoolExecutor | None = None
+# What the engine has done since it started, for the Technology page.
+stats: dict[str, Any] = {"started": time.time(), "storms_run": 0, "run_seconds": 0.0,
+                         "cache_hits": 0, "shared_waits": 0, "precomputed": 0, "paused_refreshes": 0}
+
+BUSY_PERCENT = 85         # above this the background refresh waits its turn
+
+
+def device_now() -> dict[str, Any]:
+    """This machine's cores, memory and how busy it is at this moment."""
+    memory = psutil.virtual_memory()
+    return {"logical_cores": psutil.cpu_count() or 1,
+            "physical_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 1,
+            "load_percent": psutil.cpu_percent(interval=0.5),
+            "available_mb": memory.available / 2**20, "total_mb": memory.total / 2**20}
 
 
 def _key(rain: dict[str, Any], *settings: Any) -> str:
@@ -44,45 +52,16 @@ def _key(rain: dict[str, Any], *settings: Any) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-# ─── Worker side ─────────────────────────────────────────────────────────────────
-
-def _worker_start() -> None:
-    """Runs once in each worker: load the model before the first storm arrives."""
-    from app.services import forecast
-    forecast.warm()
-
-
 def _run(rain: dict[str, Any], runoff_coeff: float, drain_condition: float, min_depth_cm: float,
-         zone: str | None, ward: str | None) -> tuple[bytes, dict[str, Any]]:
-    """One storm, start to finish: the compressed response, and the run behind it."""
+         zone: str | None, ward: str | None) -> bytes:
+    """One storm, start to finish: the compressed response."""
     from app.services import forecast
 
     answer = forecast.street_forecast(rain, runoff_coeff, drain_condition, min_depth_cm, zone, ward)
-    body = gzip.compress(json.dumps(answer, separators=(",", ":"), allow_nan=False).encode(), 5)
-    return body, forecast.run_storm(rain, runoff_coeff, drain_condition)
+    return gzip.compress(json.dumps(answer, separators=(",", ":"), allow_nan=False).encode(), 5)
 
 
 # ─── Server side ─────────────────────────────────────────────────────────────────
-
-def start(workers: int) -> None:
-    """Start the worker pool. With 0 workers every storm runs in a thread here."""
-    global _pool
-    if workers <= 0 or _pool is not None:
-        return
-    # One maths thread per worker: the workers are the parallelism, and N workers each
-    # spawning N threads would fight over the same cores.
-    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-        os.environ.setdefault(var, "1")
-    _pool = ProcessPoolExecutor(max_workers=workers, initializer=_worker_start)
-    log.info("Flood forecast pool: %d worker processes", workers)
-
-
-def stop() -> None:
-    global _pool
-    if _pool is not None:
-        _pool.shutdown(wait=False, cancel_futures=True)
-        _pool = None
-
 
 async def street_forecast_gz(rain: dict[str, Any], runoff_coeff: float, drain_condition: float,
                              min_depth_cm: float, zone: str | None, ward: str | None) -> bytes:
@@ -91,8 +70,10 @@ async def street_forecast_gz(rain: dict[str, Any], runoff_coeff: float, drain_co
     key = _key(rain, runoff_coeff, drain_condition, min_depth_cm, zone, ward)
     if key in _answers:
         _answers.move_to_end(key)
+        stats["cache_hits"] += 1
         return _answers[key]
     if key in _running:                       # someone asked a moment ago: share it
+        stats["shared_waits"] += 1
         return await asyncio.shield(_running[key])
 
     loop = asyncio.get_running_loop()
@@ -100,13 +81,10 @@ async def street_forecast_gz(rain: dict[str, Any], runoff_coeff: float, drain_co
     _running[key] = future
     try:
         args = (rain, runoff_coeff, drain_condition, min_depth_cm, zone, ward)
-        if _pool is not None:
-            body, run = await loop.run_in_executor(_pool, _run, *args)
-            # The router reads the same run: hand it over so it is not simulated again.
-            from app.services import forecast
-            forecast.remember_run(rain, runoff_coeff, drain_condition, run)
-        else:
-            body, _ = await asyncio.to_thread(_run, *args)
+        began = time.perf_counter()
+        body = await asyncio.to_thread(_run, *args)
+        stats["storms_run"] += 1
+        stats["run_seconds"] += time.perf_counter() - began
         _answers[key] = body
         if len(_answers) > _ANSWERS_KEPT:
             _answers.popitem(last=False)
@@ -138,6 +116,7 @@ async def precompute_forever() -> None:
         try:
             rain = await rainfall.report_steps(round(lat, 4), round(lon, 4), rate)
             await street_forecast_gz(rain, *defaults)
+            stats["precomputed"] += 1
         except Exception as exc:             # a failed feed is retried next round
             log.warning("Precompute %s failed: %s", rate or "live", exc)
 
@@ -145,4 +124,27 @@ async def precompute_forever() -> None:
     log.info("Flood forecasts ready: live and %d scenarios", len(PRESET_RATES_MM_H))
     while True:
         await asyncio.sleep(config.FEED_STEP_MINUTES * 60 / 3)
+        # A refresh nobody is waiting for gives way to a visitor's storm already running
+        # (they share one process) and to a machine busy with other work.
+        if _running or await asyncio.to_thread(psutil.cpu_percent, 1.0) > BUSY_PERCENT:
+            stats["paused_refreshes"] += 1
+            continue
         await one(None)
+
+
+def engine_status() -> dict[str, Any]:
+    """What the engine is doing: the device, and how the cache is paying off."""
+    runs = stats["storms_run"]
+    served = runs + stats["cache_hits"] + stats["shared_waits"]
+    return {
+        "device": device_now(),
+        "uptime_s": round(time.time() - stats["started"]),
+        "storms_run": runs,
+        "average_run_s": round(stats["run_seconds"] / runs, 1) if runs else None,
+        "answers_cached": len(_answers),
+        "cache_hits": stats["cache_hits"],
+        "shared_waits": stats["shared_waits"],
+        "served_without_simulating": round((served - runs) / served, 3) if served else None,
+        "precomputed": stats["precomputed"],
+        "paused_refreshes": stats["paused_refreshes"],
+    }

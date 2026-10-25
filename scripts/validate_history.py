@@ -30,7 +30,6 @@ where it stayed dry.
 import json
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 from pathlib import Path
 
@@ -51,7 +50,7 @@ CHANCE_SAMPLE = 5000
 
 
 def _peak_levels(rate: float, runoff: float, drain: float) -> np.ndarray:
-    """One storm in a worker: the highest water level each zone reaches."""
+    """One storm: the highest water level each zone reaches."""
     from app import config
     from app.services import forecast
 
@@ -63,11 +62,6 @@ def _peak_levels(rate: float, runoff: float, drain: float) -> np.ndarray:
     run = coupled.simulate(system["surface"], system["network"], rain["rain_mm"],
                            rain["step_minutes"], runoff, drain)
     return run["levels"].max(axis=0)
-
-
-def _worker_start() -> None:
-    from app.services import forecast
-    forecast.coupled_system()
 
 
 def main() -> None:
@@ -96,9 +90,8 @@ def main() -> None:
     dp_xy = history.metres_xy(dp["lat"], dp["lon"])
 
     combos = list(product(STORMS_MM_H, RUNOFF, DRAIN_CONDITION))
-    print(f"{len(combos)} runs on the worker pool...", flush=True)
-    with ProcessPoolExecutor(max_workers=config.FORECAST_WORKERS or 4, initializer=_worker_start) as pool:
-        peaks = list(pool.map(_peak_levels, *zip(*combos)))
+    print(f"{len(combos)} runs...", flush=True)
+    peaks = [_peak_levels(*combo) for combo in combos]
 
     results = []
     for (rate, runoff, drain), peak in zip(combos, peaks):

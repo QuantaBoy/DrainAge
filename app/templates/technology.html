@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Technology · SIH26085{% endblock %}
+{% block shell %}page{% endblock %}
+
+{% block content %}
+    <section class="res-head">
+        <h1>Technology</h1>
+        <p>How the forecast runs fast on the device it is on, and every resource it is built
+           from. The numbers on this page are read live from this server, not written in.</p>
+    </section>
+
+    <section class="tech-section" aria-labelledby="engine-title">
+        <div class="tech-title-row">
+            <h2 id="engine-title">Forecast engine</h2>
+            <span class="tech-live" id="engine-live">Reading this device…</span>
+        </div>
+        <p class="tech-lead">The speed comes from never running the same storm twice, and from computing the likely storms before anyone asks.</p>
+        <div class="tech-grid" id="engine-grid">
+            <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+        </div>
+    </section>
+
+    <section class="tech-section" aria-labelledby="how-title">
+        <h2 id="how-title">Techniques</h2>
+        <ul class="tech-cards">
+            <li><h3>Computed ahead</h3><p>The live forecast and the 15, 30, 60 and 100 mm/h storms are ready
+                before anyone asks, and the live one refreshes as the rain feed updates.</p></li>
+            <li><h3>Compressed answers</h3><p>A finished forecast is kept gzip-compressed and sent as it is:
+                about 3.4 MB instead of 27 MB, with no work on a repeat request.</p></li>
+            <li><h3>Shared requests</h3><p>Requests for a storm already being computed wait for that run
+                instead of starting another.</p></li>
+            <li><h3>Model on disk</h3><p>The built city model is saved, keyed on every input file, so a
+                restart loads it in seconds instead of rebuilding it for minutes.</p></li>
+            <li><h3>A* routing</h3><p>The safe route is found with A*, which settles about a fifth of the
+                junctions Dijkstra does for the same answer.</p></li>
+        </ul>
+    </section>
+
+    <section class="tech-section" aria-labelledby="res-title">
+        <div class="tech-title-row">
+            <h2 id="res-title">Resources</h2>
+            <span class="tech-live" id="res-live">Checking files…</span>
+        </div>
+        <p class="tech-lead">Every file the model is built from, found and counted on this server.</p>
+        <div class="tech-table-wrap">
+            <table class="tech-table" id="res-table">
+                <thead><tr><th>Resource</th><th>Source</th><th>On this server</th><th>Used for</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <h3 class="tech-sub">Live services</h3>
+        <ul class="tech-services" id="services"></ul>
+    </section>
+
+    <section class="tech-section" aria-labelledby="check-title">
+        <h2 id="check-title">Checked against the flood record</h2>
+        <p class="tech-lead" id="check-lead">Loading…</p>
+        <div class="tech-table-wrap">
+            <table class="tech-table" id="check-table">
+                <thead><tr><th>Storm</th><th>2015 flood places found</th><th>Chance</th>
+                    <th>Skill on unseen zones</th><th>High-hazard streets flood</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}
+
+{% block scripts %}
+    <script src="{{ url_for('static', path='js/technology.js') }}?v={{ asset_v }}"></script>
+{% endblock %}

@@ -1,0 +1,434 @@
+% DRAIN OUT - Pitch Deck Draft: the content of every slide
+% Compile on Overleaf with pdfLaTeX. No external files needed.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1.9cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[table]{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent]{hyperref}
+
+% ---------- Look ----------
+\definecolor{accent}{HTML}{0B5CAD}
+\definecolor{hook}{HTML}{C0392B}
+\definecolor{visual}{HTML}{1E7B34}
+\definecolor{speak}{HTML}{6C3483}
+\definecolor{soft}{HTML}{EEF3FA}
+\definecolor{ink}{HTML}{1B2330}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.7em}{}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{accent}\textbf{DRAIN OUT} \textperiodcentered{} Pitch Deck Draft}
+\rhead{\small Team Tech Sprints \textperiodcentered{} SIH 2026}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlist{itemsep=2pt,topsep=3pt}
+\renewcommand{\arraystretch}{1.3}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+% One box per slide.
+\newtcolorbox{slidebox}[1]{enhanced,breakable,colback=white,colframe=accent,
+  coltitle=white,fonttitle=\bfseries\large,title={#1},arc=2pt,boxrule=0.9pt,
+  left=9pt,right=9pt,top=7pt,bottom=7pt,before skip=12pt,after skip=12pt}
+
+% The parts of a slide.
+\newcommand{\purpose}[1]{\par{\small\color{ink!70}\textbf{PURPOSE:} \emph{#1}}\par\medskip}
+\newcommand{\hookline}[1]{%
+  \begin{tcolorbox}[colback=hook!6,colframe=hook,boxrule=0.6pt,arc=2pt,left=7pt,right=7pt,top=4pt,bottom=4pt]
+  {\color{hook}\textbf{HEADLINE (top of slide):}} \textbf{#1}\end{tcolorbox}}
+\newcommand{\slidepart}[2]{\par\smallskip{\color{#1}\textbf{#2}}\par\smallskip}
+\newcommand{\onslide}{\slidepart{accent}{ON THE SLIDE}}
+\newcommand{\visuals}{\slidepart{visual}{VISUALS \& LAYOUT}}
+\newcommand{\speaker}{\slidepart{speak}{SPEAKER SCRIPT}}
+\newcommand{\say}[1]{\begin{tcolorbox}[colback=speak!5,colframe=speak!60,boxrule=0.4pt,arc=2pt,
+  left=7pt,right=7pt,top=4pt,bottom=4pt]\itshape #1\end{tcolorbox}}
+
+% =====================================================================
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par\vspace{0.6cm}
+  {\Huge\bfseries DRAIN OUT\par}
+  \vspace{0.3cm}
+  {\LARGE Pitch Deck Draft\par}
+  \vspace{0.4cm}
+  {\large The content, visuals and script of every slide\par}
+  \vspace{0.6cm}
+  {\color{accent}\rule{\linewidth}{1.2pt}}\par
+  \vspace{1.2cm}
+  {\Large\itshape ``Know the flood before it reaches your street.''\par}
+  \vspace{1.5cm}
+  \begin{tabular}{@{}ll@{}}
+    \textbf{Event}     & Smart India Hackathon 2026 \\
+    \textbf{Team}      & Tech Sprints \\
+    \textbf{Prototype} & \url{https://github.com/QuantaBoy/SIH26085} \\
+  \end{tabular}
+  \vfill
+  \begin{minipage}{0.88\linewidth}\small
+  \textbf{How to read this.} Each slide has five parts:
+  {\color{ink!70}\textbf{Purpose}} (what the slide must make the jury believe),
+  {\color{hook}\textbf{Headline}} (the one line at the top),
+  {\color{accent}\textbf{On the slide}} (the exact text),
+  {\color{visual}\textbf{Visuals \& layout}} (what to draw and where), and
+  {\color{speak}\textbf{Speaker script}} (what to say while it is on screen).
+  \end{minipage}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{The story the deck tells}
+
+\begin{center}
+\begin{tabular}{@{}clp{9.5cm}@{}}
+\toprule
+\textbf{Slide} & \textbf{Beat} & \textbf{What the jury should believe after it}\\
+\midrule
+1 & Identity & Who we are and which problem we solve\\
+2 & Problem $\rightarrow$ Solution & Warnings stop at the ward; DRAIN OUT goes to the street\\
+3 & How it works & A rigorous physics + AI pipeline, not a dashboard on top of a weather API\\
+4 & Can it be done & Every input exists nationally; every risk has a mitigation\\
+5 & Why it matters & Lives, money and city operations, for named users\\
+6 & Evidence & We know the field, and we fill the gap it leaves\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Tagline (use on slides 1 and 5, and as the last words of the pitch):}
+\emph{Know the flood before it reaches your street.}
+
+% =====================================================================
+\section{Slide by slide}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 1 \textendash{} Title Page}
+\purpose{Identify the team and problem instantly; set a confident, national tone.}
+\hookline{DRAIN OUT: Street-Level Urban Flood Nowcasting \& Safe Routing for Indian Cities}
+
+\onslide
+\begin{itemize}
+  \item \textbf{Problem Statement ID:} \emph{(fill in)}
+  \item \textbf{Problem Statement Title:} \emph{(fill in)}
+  \item \textbf{Theme:} \emph{(fill in)}
+  \item \textbf{PS Category:} Software
+  \item \textbf{Team ID:} \emph{(fill in)}
+  \item \textbf{Team Name:} Tech Sprints
+\end{itemize}
+Tagline under the title: \emph{Know the flood before it reaches your street.}
+
+\visuals
+\begin{itemize}
+  \item Keep the SIH template; put the DRAIN OUT logo beside the title.
+  \item No field may be left empty: an empty title page is the first thing a jury notices.
+\end{itemize}
+
+\speaker
+\say{``We are Tech Sprints. Our solution is DRAIN OUT: it tells you which street will flood,
+how deep, and when, and gets you around it.''}
+\end{slidebox}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 2 \textendash{} Proposed Solution \& Unique Value Proposition}
+\purpose{Make the problem felt in one sentence, then show a solution that is clearly
+different from what exists.}
+\hookline{Today's flood warnings say ``Chennai''. DRAIN OUT says ``Anna Salai, 35 cm, 4:40 PM''.}
+
+\onslide
+\textbf{Proposed Solution.} DRAIN OUT is a national platform that forecasts urban
+flooding street by street, 0--3 hours ahead, and guides people and emergency services
+around it.
+\begin{itemize}
+  \item \textbf{Coupled drainage + terrain simulation} predicts flood depth in
+        \textbf{cm on every street, every 5 minutes}.
+  \item \textbf{Onboards any Indian city}: drainage maps (GIS, CAD, scanned) become a
+        working drain network, with missing links auto-repaired.
+  \item \textbf{Physics-trained AI (ConvLSTM)} with a \textbf{historical pattern model}:
+        millisecond forecasts that learn each city's recurring flood zones.
+  \item Detects \textbf{overflowing manholes and overloaded drains}, turning fixed
+        desilting schedules into targeted ones.
+  \item \textbf{Flood-safe routing (A* / Dijkstra)} for citizens, ambulances and traffic police.
+  \item Delivered through a \textbf{control-room GIS dashboard, a multilingual mobile app
+        and open APIs}, integrated with NDMA alerts.
+\end{itemize}
+
+\textbf{Unique Value Proposition} (six boxes around the logo):
+\begin{tabularx}{\linewidth}{@{}LL@{}}
+1.\ Street-level, not ward-level: depth in cm & 4.\ Manhole-level overflow and backflow detection\\
+2.\ Missing-link-aware drainage network & 5.\ One platform, any Indian city\\
+3.\ Physics + AI + historical memory & 6.\ Flood-safe routing in under a second\\
+\end{tabularx}
+
+\textbf{DRAIN OUT addresses the problem by} (four icon boxes):
+\begin{itemize}
+  \item Street-level flood depth (cm), 0--3 hours ahead, every 5 minutes
+  \item Pinpointing overloaded drains and overflowing manholes before they overflow
+  \item Rerouting traffic and emergency vehicles around flooded roads
+  \item Location-based early warnings in local languages
+\end{itemize}
+
+\visuals
+\begin{itemize}
+  \item Left half: Proposed Solution. Right half: the six UVP boxes around the DRAIN OUT logo.
+  \item Bottom strip: \textbf{Before / After} \textendash{} ``Flood-unaware route'' (red line
+        through a flooded street) $\rightarrow$ ``Flood-aware safe route'' (green line around it).
+  \item Show the dashboard on a laptop and a phone; label the phone ``Mobile app''.
+\end{itemize}
+
+\speaker
+\say{``It's 4 PM. The alert on your phone says: heavy rain expected in Chennai. An ambulance
+driver reads it too. Which road is safe? Which underpass floods first? The alert can't
+say. Every flood warning in India today stops at the city or ward level, but water does
+not flood a ward, it floods a street. DRAIN OUT forecasts flooding street by street, in
+centimetres, three hours ahead, every five minutes, and routes you around it.''}
+\end{slidebox}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 3 \textendash{} Technical Approach}
+\purpose{Prove technical depth: real engineering and AI, in a clean pipeline the jury can
+follow left to right.}
+\hookline{Rain, drains and roads \textendash{} simulated together, every 5 minutes.}
+
+\onslide
+\begin{enumerate}[label=\textbf{\arabic*.}]
+  \item \textbf{Data collection:} IMD Doppler radar and rain gauges \textperiodcentered{}
+        CartoDEM / LiDAR \textperiodcentered{} city drainage records \textperiodcentered{}
+        NRSC land use and soil (SCS-CN) \textperiodcentered{} INCOIS tide levels
+        \textperiodcentered{} historical floods (NDMA, Sentinel-1) \textperiodcentered{}
+        IoT water-level sensors
+  \item \textbf{City onboarding:} digitise $\rightarrow$ build drain network $\rightarrow$
+        auto-repair gaps $\rightarrow$ infer flow direction $\rightarrow$ correct terrain
+        to surveyed levels
+  \item \textbf{Physics layer:} SCS-CN runoff $\rightarrow$ drain capacity
+        $Q_{cap} = \frac{1}{n} A R^{2/3} S^{1/2}$ $\rightarrow$ drains and street surface
+        simulated together $\rightarrow$ overflow and backflow at manholes
+  \item \textbf{AI layer:} ConvLSTM trained on simulated storms and historical floods
+        \textperiodcentered{} historical pattern model \textperiodcentered{} live correction
+        from sensors \textperiodcentered{} flood probability per street
+  \item \textbf{Decision support:} early warnings \textperiodcentered{} desilting priority
+        \textperiodcentered{} diversions \textperiodcentered{} flood-safe routing
+  \item \textbf{Delivery:} GIS dashboard (ICCC) \textperiodcentered{} mobile app
+        \textperiodcentered{} REST APIs \textperiodcentered{} NDMA SACHET (CAP) alerts
+\end{enumerate}
+\textbf{Outputs:} street-level depth (cm) \textperiodcentered{} 0--3 h nowcast at
+5-minute steps \textperiodcentered{} flood risk and severity \textperiodcentered{}
+overflowing manholes \textperiodcentered{} flood-safe routes
+
+\textbf{Tech stack:} Python \textperiodcentered{} FastAPI \textperiodcentered{}
+NumPy / SciPy \textperiodcentered{} PyTorch (ConvLSTM) \textperiodcentered{} PostGIS
+\textperiodcentered{} Leaflet / GIS \textperiodcentered{} Docker
+
+\textbf{Prototype:} working city-wide pilot on Chennai \textendash{}
+\url{https://github.com/QuantaBoy/SIH26085} \textperiodcentered{} Demo video: \emph{(link)}
+
+\visuals
+\begin{itemize}
+  \item A left-to-right flow diagram with six numbered stages, matching the list above.
+  \item Inside the physics layer, show the Manning formula: it signals engineering rigour.
+  \item Two yellow output boxes: \emph{Physics outputs} (depth, 2D surface flow, drain
+        capacity, runoff, surcharge / backflow) and \emph{Final outputs} (street depth in
+        cm, 0--3 h at 5 min, risk and severity).
+  \item Right column: tech stack, GitHub link with the GitHub icon, demo video link.
+  \item A small screenshot of the dashboard showing a real forecast with red streets
+        \textendash{} never a screenshot with an error on it.
+\end{itemize}
+
+\speaker
+\say{``Rainfall comes from IMD radar. The terrain and every drain in the city become one
+network. Our physics engine simulates rain, drains and roads together, so it knows which
+manhole overflows first. On top, a ConvLSTM trained on thousands of simulated storms
+makes it fast enough to run every city, and a historical model remembers where floods
+recur. Everything ends in one output: which street, how deep, and when.''}
+\end{slidebox}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 4 \textendash{} Feasibility and Viability}
+\purpose{Remove doubt: every input exists nationally, every risk has an answer, and it
+scales without being rebuilt.}
+\hookline{Any Indian city goes live from its own drainage records \textendash{} no new code.}
+
+\onslide
+\textbf{Feasibility Analysis}
+
+\begin{tabularx}{\linewidth}{@{}p{3.2cm}L@{}}
+\toprule
+\textbf{Data} & Every input has a national source: IMD, NRSC, Copernicus, INCOIS, NDMA, city drainage records.\\
+\textbf{Modelling} & Built on established engineering methods: Manning, SCS-CN, CPHEEO, HEC-22.\\
+\textbf{AI} & Trained on simulated storms, so it does not depend on scarce flood records.\\
+\textbf{Scalability} & The same pipeline for every city; a new city is data onboarding, not new code.\\
+\textbf{Integration} & Open APIs connect to Smart City command centres, 108, traffic police and NDMA alerts.\\
+\bottomrule
+\end{tabularx}
+
+\medskip
+\textbf{Viability: Challenge $\rightarrow$ Mitigation}
+
+\begin{tabularx}{\linewidth}{@{}p{4.4cm}L@{}}
+\toprule
+\textbf{Incomplete drainage records} & Auto-repair of missing links plus digitisation of paper maps\\
+\textbf{Validation} & Each city tested against its past floods before go-live\\
+\textbf{Model drift over years} & Recalibrated after every monsoon; historical model refitted on recent years\\
+\textbf{Multi-agency integration} & Standard REST and CAP alert formats\\
+\textbf{Nationwide scale} & Cloud deployment; one platform serving many cities\\
+\bottomrule
+\end{tabularx}
+
+\medskip
+\textbf{Viability statement:} DRAIN OUT is viable because it combines nationally
+available data with established hydraulic engineering and AI in one modular pipeline
+that is validated on each city's past floods and scaled city by city.
+
+\visuals
+\begin{itemize}
+  \item Left: five blue feasibility labels with their text boxes.
+  \item Right: five challenges, each joined by an orange icon to its mitigation.
+  \item Bottom: the viability statement in a bordered box.
+  \item Replace ``Your Team Name'' in the template's oval with ``Tech Sprints''.
+\end{itemize}
+
+\speaker
+\say{``Every input already exists across India: IMD radar, NRSC land data, national
+terrain, and every city's own drainage records. Where records are incomplete, and they
+always are, our network repairs missing links automatically. The AI learns from
+simulations, so it doesn't wait for decades of flood records. And a new city is a data
+job, not a rebuild.''}
+\end{slidebox}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 5 \textendash{} Impact and Benefits}
+\purpose{Make the value concrete: who is helped, how, and why it matters nationally.}
+\hookline{From a flood warning to a safe route \textendash{} in under a second.}
+
+\onslide
+\begin{tabularx}{\linewidth}{@{}p{3.2cm}L@{}}
+\toprule
+\textbf{01 Safety} & Street-level warnings up to 3 hours ahead; flood-safe routes for citizens, ambulances and fire services.\\
+\textbf{02 Economic} & Less property and vehicle damage; desilting budgets spent where drains actually overflow.\\
+\textbf{03 Urban planning} & Recurring flood hotspots and undersized drains identified for long-term investment.\\
+\textbf{04 Operational} & One shared, live picture for city corporations, disaster authorities, traffic police and hospitals.\\
+\bottomrule
+\end{tabularx}
+
+\medskip
+\textbf{Core impact:} Street-level early warning and safe mobility for India's
+flood-prone cities.
+
+\textbf{Users:} city corporations \textperiodcentered{} NDMA / state disaster authorities
+\textperiodcentered{} traffic police \textperiodcentered{} 108 ambulance and fire
+services \textperiodcentered{} citizens
+
+\textbf{SDGs:} 3 Good Health \textperiodcentered{} 9 Industry \& Infrastructure
+\textperiodcentered{} 11 Sustainable Cities \textperiodcentered{} 13 Climate Action
+
+\visuals
+\begin{itemize}
+  \item Keep the four-quadrant layout (Safety, Economic, Urban, Operational) around the
+        SIH logo.
+  \item Core impact in a bordered box at the bottom left; SDG icons at the bottom right.
+  \item Add the user icons (municipal building, police, ambulance, citizen) in one row.
+\end{itemize}
+
+\speaker
+\say{``For citizens, a warning that names their street and a way around the water. For
+ambulances and fire services, routes that never drive into a flood. For city
+corporations, the drains that will overflow, so they are cleaned before the monsoon, not
+after. Know the flood before it reaches your street.''}
+\end{slidebox}
+
+% ---------------------------------------------------------------------
+\begin{slidebox}{Slide 6 \textendash{} Research and References}
+\purpose{Show we know the field and that DRAIN OUT fills a real gap in it.}
+\hookline{Existing systems stop at the ward. We go to the street.}
+
+\onslide
+{\small
+\begin{tabularx}{\linewidth}{@{}p{3.2cm}p{4.0cm}L@{}}
+\toprule
+\textbf{Organisation} & \textbf{Work} & \textbf{Gap DRAIN OUT fills}\\
+\midrule
+Ministry of Earth Sciences & I-FLOWS Mumbai & Ward-level alerts $\rightarrow$ street-level depth in cm\\
+NCCR & C-FLOWS Chennai & Precomputed scenarios $\rightarrow$ live simulation every 5 min\\
+NDMA & Urban Flooding Guidelines (2010) & Guidelines $\rightarrow$ an operational forecasting tool\\
+MoHUA / CPHEEO & Storm Water Drainage Manual (2019) & Design standard $\rightarrow$ real-time drain load\\
+FHWA & HEC-22 Urban Drainage Design & Inlet capture applied to live forecasting\\
+IMD & Doppler Weather Radar network & Radar rainfall $\rightarrow$ street-level flood depth\\
+\bottomrule
+\end{tabularx}}
+
+\visuals
+\begin{itemize}
+  \item Left: the table, with each organisation's logo in the first column and a working
+        link for every work.
+  \item Right: the two charts (urban flood deaths by city; area affected by floods) with
+        a \textbf{source line under each}.
+  \item Drop any paper that is not about urban flooding.
+\end{itemize}
+
+\speaker
+\say{``India's flood warning systems are strong at the city and ward scale. I-FLOWS gives
+ward-level alerts; C-FLOWS matches precomputed scenarios. DRAIN OUT fills the gap they
+leave: live simulation, down to the street and the manhole, with a safe way around.''}
+\end{slidebox}
+
+% =====================================================================
+\section{Jury questions and answers}
+
+{\small
+\begin{longtable}{@{}p{5.0cm}p{11.3cm}@{}}
+\toprule
+\textbf{Question} & \textbf{Answer}\\
+\midrule\endhead
+What have you built so far? & A working city-wide pilot on Chennai: the drain network, the
+  coupled physics engine, the street-level forecast and flood-safe routing, running on real
+  data. The ConvLSTM layer and IoT integration are the next phase.\\
+Where does ConvLSTM get training data when floods are rare? & From the physics engine: it
+  simulates thousands of storms, and the network learns to reproduce them in milliseconds.
+  Scarce flood records are used to validate, not to train.\\
+How accurate is it? & Every run conserves water exactly. Each city is validated against its
+  past floods before go-live; for Chennai, the December 2015 flooding points.\\
+Cities have incomplete drainage maps. & Our onboarding digitises paper maps and repairs
+  missing links and unsized drains automatically, marking them as assumed.\\
+Why not use I-FLOWS or C-FLOWS? & They warn at ward level or match precomputed scenarios.
+  DRAIN OUT simulates live, street by street and manhole by manhole, and adds routing.\\
+How does it scale to all of India? & One pipeline. A new city needs its drainage records,
+  national terrain and IMD rainfall; no new code.\\
+What about blocked drains? & Each drain's capacity is reduced by its surveyed condition, and
+  a silting setting shows what happens if drains are partly blocked.\\
+Who uses it and who pays? & City corporations and Smart City command centres; traffic police
+  and 108 for routing. Built on free national data, so the cost is deployment, not licences.\\
+How fast is it? & A city-wide 3-hour forecast in seconds; a flood-safe route in under a
+  second.\\
+\bottomrule
+\end{longtable}}
+
+% =====================================================================
+\section{Final checklist before submission}
+
+\begin{itemize}[label=$\square$]
+  \item Title page: every field filled in.
+  \item No template placeholder left (``Your Team Name'', ``LINK'').
+  \item Prototype link and demo video link on slide 3 work.
+  \item Dashboard screenshot shows a real forecast, no error messages.
+  \item Every chart has a source line.
+  \item Every reference is about urban flooding and has a working link.
+  \item Spelling: ``Addresses'', ``maintenance'', ``permeability''.
+  \item Each slide has its headline at the top.
+  \item The pitch has been rehearsed to 3 minutes, ending on the tagline.
+\end{itemize}
+
+\end{document}

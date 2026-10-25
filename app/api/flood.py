@@ -24,6 +24,13 @@ DRAIN_CONDITION = Query(1.0, ge=0, le=1, description="Share of the surveyed drai
 RUNOFF_COEFF = Query(hydraulics.RUNOFF_COEFF, gt=0, le=1)
 
 
+def snap(rain_mm_h: float | None, runoff_coeff: float, drain_condition: float) -> tuple:
+    """Round what-if settings to steps people can tell apart (1 mm/h, 0.05), so nearby
+    requests share one cached run instead of each starting a new simulation."""
+    return (None if rain_mm_h is None else float(round(rain_mm_h)),
+            max(0.05, round(runoff_coeff * 20) / 20), round(drain_condition * 20) / 20)
+
+
 async def _relief() -> dict[str, Any]:
     layer = await asyncio.to_thread(terrain.relief_layer)
     if layer is None:
@@ -65,6 +72,7 @@ async def get_street_forecast(
     zone: str | None = Query(None, description="Only streets in this zone, e.g. N07"),
     ward: str | None = Query(None, description="Only streets in this ward, e.g. N082"),
 ) -> Response:
+    rain_mm_h, runoff_coeff, drain_condition = snap(rain_mm_h, runoff_coeff, drain_condition)
     rain = await rainfall.report_steps(lat, lon, rain_mm_h)
     body = await compute.street_forecast_gz(rain, runoff_coeff, drain_condition, min_depth_cm, zone, ward)
     # Sent as it was compressed when computed; every browser accepts gzip.
