@@ -10,6 +10,7 @@ start, which is why the pages are redeployed each time.
 
 import functools
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -17,7 +18,7 @@ from pathlib import Path
 
 print = functools.partial(print, flush=True)
 ROOT = Path(__file__).resolve().parent.parent
-CLOUDFLARED = Path.home() / "bin" / "cloudflared.exe"
+CLOUDFLARED = shutil.which("cloudflared") or Path.home() / "bin" / "cloudflared.exe"
 
 
 def main() -> None:
