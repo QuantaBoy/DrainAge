@@ -1757,6 +1757,11 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     .rs-stats dd { font-size: 1.2rem; }
     .rs-stats > div { padding: .8rem .9rem; }
 }
+/* Too narrow for all three links beside the logo: the links take a row of their own. */
+@media (max-width: 26rem) {
+    .page .topbar { flex-wrap: wrap; justify-content: space-between; }
+    .page .nav { order: 3; flex-basis: 100%; }
+}
 
 /* Page headings match across Resources and Technology. */
 .res-head h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(1.8rem, 3.2vw, 2.6rem); letter-spacing: -.03em; }
