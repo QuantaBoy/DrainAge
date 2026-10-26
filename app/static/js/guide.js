@@ -241,5 +241,5 @@
     document.getElementById("guide-open")?.addEventListener("click", open);
     // The tour never opens by itself: the forecast comes first. A first-time visitor is
     // offered it in the summary at the top of Alerts (ponding.js).
-    window.guide = { open, seen };
+    window.guide = { open };
 })();

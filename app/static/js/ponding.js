@@ -607,10 +607,13 @@ function statusCard(data, named) {
         });
         actions.append(back);
     }
-    if (window.guide && !window.guide.seen()) {
+    // Read the tour's own flag directly: guide.js may load after the first draw.
+    let toured = true;
+    try { toured = localStorage.getItem("guide-seen-v1") === "1"; } catch (err) {}
+    if (!toured) {
         const tour = el("button", "status-link", "New here? Take the 1-minute tour");
         tour.type = "button";
-        tour.addEventListener("click", () => window.guide.open());
+        tour.addEventListener("click", () => window.guide?.open());
         actions.append(tour);
     }
     if (actions.childElementCount) card.append(actions);
