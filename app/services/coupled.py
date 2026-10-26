@@ -1,7 +1,8 @@
 """Dual drainage: the street surface and the drain network run as one system.
 
-Rain falls on the ground. Part of it runs off (the runoff coefficient), and where it
-runs is decided by the terrain and the drains together, every minute of the storm:
+Rain falls on the ground. Part of it soaks in and the rest runs off, by the SCS curve
+number method with each zone's curve number from how built-up it is; where it runs is
+decided by the terrain and the drains together, every minute of the storm:
 
   surface (2D)   the city is cut into storage zones, one per DEM depression and the
                  ground that drains into it (surface.prepare). A zone holds water
@@ -74,6 +75,16 @@ SIDE_WEIR_C = 1.66
 # Depth of the kerb-side flow that on-grade inlets see while the rain is falling:
 # 5 cm is the gutter flow Indian road drainage is designed to (IRC:SP:50).
 GUTTER_DEPTH_M = 0.05
+
+# SCS curve numbers (USDA TR-55, hydrologic soil group D: Chennai's alluvial clays and
+# silts). Roofs are fully impervious; the rest of a zone is roads, paving and patches
+# of open ground. A zone's number is the building-weighted mix of the two.
+# ponytail: one soil group and one figure for open ground across the city; a land-use
+# and soil map (NRSC, NBSS&LUP) per cell replaces them.
+CN_IMPERVIOUS = 98.0
+CN_OPEN_GROUND = 86.0
+# Rain held back before any runs off (TR-55): Ia = 0.2 S.
+INITIAL_ABSTRACTION = 0.2
 
 # How fast runoff crosses a zone to its low point, m/s: sheet flow and gutters on flat
 # paved ground. A zone of side L takes L / speed to deliver its rain. ponytail: one
@@ -197,6 +208,10 @@ def build_surface(model: dict[str, Any]) -> dict[str, Any]:
         "pa": pa, "pb": pb, "cmin": cmin,
     }
     # Water in a zone below the lowest crest to a neighbour cannot leave towards it.
+    # Each zone's curve number, from the building share of its cells.
+    built = np.bincount(flat_z[land], weights=1.0 - open_share.ravel()[land], minlength=n)
+    built = np.divide(built, size, out=np.zeros(n), where=size > 0)
+    surface_model["cn"] = built * CN_IMPERVIOUS + (1.0 - built) * CN_OPEN_GROUND
     surface_model["vc_a"] = volume_below(surface_model, pa, cmin)
     surface_model["vc_b"] = np.where(pb == sea, 0.0, volume_below(surface_model, np.minimum(pb, sea - 1), cmin))
     return surface_model
@@ -492,6 +507,21 @@ def _route(net: dict[str, Any], arrive: np.ndarray, stored: np.ndarray, intercep
 
 # ─── The storm ──────────────────────────────────────────────────────────────────
 
+def scs_excess(rain_mm: np.ndarray, cn: np.ndarray) -> np.ndarray:
+    """The rain that runs off in each step, mm, by the SCS curve number method.
+
+    `rain_mm` is (steps, zones); runoff depends on the rain fallen so far, so the
+    storm's cumulative rain is turned to cumulative runoff and differenced:
+    Q = (P - Ia)^2 / (P - Ia + S) once P passes Ia, S = 25400 / CN - 254.
+    """
+    s = 25400.0 / np.clip(cn, 1.0, 100.0) - 254.0
+    ia = INITIAL_ABSTRACTION * s
+    p = np.cumsum(rain_mm, axis=0)
+    wet = np.clip(p - ia, 0.0, None)
+    q = np.divide(wet * wet, wet + s, out=np.zeros_like(p), where=wet + s > 0)
+    return np.diff(q, axis=0, prepend=0.0)
+
+
 def simulate(s: dict[str, Any], net: dict[str, Any], rain_mm: Any, step_minutes: float,
              runoff_coeff: float, drain_condition: float) -> dict[str, Any]:
     """Run a storm through the surface and the network together.
@@ -510,12 +540,13 @@ def simulate(s: dict[str, Any], net: dict[str, Any], rain_mm: Any, step_minutes:
     steps = out_steps * per
     rain = np.repeat(rain / per, per, axis=0)              # mm in each coupling step
     rain[:, sea] = 0.0
+    excess = scs_excess(rain, s["cn"])                     # mm that runs off, per step
 
     # The zone's own ground away from the drains delivers its runoff over its time of
     # concentration: the mean of the rain over the last `lag` steps.
     remainder = net["remainder"]
     lag = np.maximum(1, np.ceil(np.sqrt(remainder) / FLOW_SPEED_M_S / dt)).astype(np.int64)
-    fallen = np.vstack([np.zeros(n), np.cumsum(rain, axis=0)])
+    fallen = np.vstack([np.zeros(n), np.cumsum(excess, axis=0)])
     cols = np.arange(n)
 
     inlet = net["inlet"]
@@ -526,7 +557,8 @@ def simulate(s: dict[str, Any], net: dict[str, Any], rain_mm: Any, step_minutes:
     gutter = grate_capacity(g_in, o_in, np.full(inlet.size, GUTTER_DEPTH_M)) * dt
     undrained = net["undrained"]
     # Zones with no surveyed drain lose runoff at the design rate, scaled like every
-    # other drain by its condition.
+    # other drain by its condition. `runoff_coeff` only sizes these assumed drains (the
+    # Rational method they are designed by); the runoff itself is SCS-CN.
     virtual_rate = (runoff_coeff * UNSURVEYED_DESIGN_MM_H / 3.6e6 * drain_condition
                     * s["area_m2"] * undrained)
 
@@ -551,10 +583,10 @@ def simulate(s: dict[str, Any], net: dict[str, Any], rain_mm: Any, step_minutes:
         ledger["rain"] += float(np.dot(mm, s["area_m2"])) / 1000.0
         # Rain on the ground away from the drains, arriving over the zone's lag.
         arriving = (fallen[t + 1] - fallen[np.maximum(0, t + 1 - lag), cols]) / lag
-        volume += runoff_coeff * arriving / 1000.0 * remainder
+        volume += arriving / 1000.0 * remainder
 
         # Rain on each drain's strip, caught at gutter depth; the rest runs on.
-        strip_runoff = runoff_coeff * mm[in_zone] / 1000.0 * strip_in
+        strip_runoff = excess[t][in_zone] / 1000.0 * strip_in
         caught = np.minimum(strip_runoff, gutter)
         missed = strip_runoff - caught
         ledger["runoff"] += float(strip_runoff.sum())
@@ -608,8 +640,8 @@ def simulate(s: dict[str, Any], net: dict[str, Any], rain_mm: Any, step_minutes:
             node_depth[out] = np.clip(level[node_zone] - ground, 0.0, None) * (volume[node_zone] > 0)
 
     # Runoff generated off the strips so far, less what has not yet reached its zone.
-    generated_rest = runoff_coeff * float(np.dot(fallen[-1], remainder)) / 1000.0
-    arrived_rest = runoff_coeff * float(np.dot(
+    generated_rest = float(np.dot(fallen[-1], remainder)) / 1000.0
+    arrived_rest = float(np.dot(
         sum((fallen[t + 1] - fallen[np.maximum(0, t + 1 - lag), cols]) / lag for t in range(steps)),
         remainder)) / 1000.0 if steps else 0.0
     ledger["runoff"] += generated_rest

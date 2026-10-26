@@ -6,8 +6,51 @@
 {% block content %}
     <section class="res-head">
         <h1>Technology</h1>
-        <p>How the forecast runs fast on the device it is on, and every resource it is built
-           from. The numbers on this page are read live from this server, not written in.</p>
+        <p>What is new in this system, how it runs, and every resource it is built from.
+           The numbers in the lower sections are read live from the server, not written in.</p>
+    </section>
+
+    <section class="tech-section innov" aria-labelledby="innov-title">
+        <h2 id="innov-title">Innovation</h2>
+        <p class="tech-lead">Flood warning in Indian cities today stops at the ward, or looks up pre-computed
+           scenarios. This system simulates every street, live, from the rain forecast to the drain it fills.</p>
+        <ol class="innov-list">
+            <li>
+                <h3>Street by street, not ward by ward</h3>
+                <p>Depth in centimetres on each street stretch, every 5 minutes for the next 3 hours.</p>
+                <span class="innov-vs">Today: ward-level warnings (I-FLOWS Mumbai) or scenario lookup (C-FLOWS Chennai).</span>
+            </li>
+            <li>
+                <h3>Rain, ground and drains in one live model</h3>
+                <p>Rain soaks in or runs off by SCS curve number, flows over a 30 m terrain model, enters the
+                   drains up to their Manning capacity, and comes back up at the manholes when they are full.</p>
+                <span class="innov-vs">Today: rainfall forecasts with no link to the drains that carry it.</span>
+            </li>
+            <li>
+                <h3>Paper maps turned into a working drain network</h3>
+                <p>92 scanned GCC ward sheets read by OCR into 7,951 manholes and 12,566 drains, joined with
+                   the city's 10,257-drain survey into one directed graph.</p>
+                <span class="innov-vs">Any city with drain maps, even on paper, can be onboarded the same way.</span>
+            </li>
+            <li>
+                <h3>Terrain corrected to the street</h3>
+                <p>The satellite terrain is corrected to surveyed manhole levels, building clutter is taken
+                   out, and rivers and canals are cut in so they carry water instead of damming it.</p>
+                <span class="innov-vs">Its height datum is checked point by point: see Resources.</span>
+            </li>
+            <li>
+                <h3>Drain condition as a control</h3>
+                <p>Run any storm with the drains at full, half, a quarter or no capacity, and see which
+                   streets flood and which manholes overflow.</p>
+                <span class="innov-vs">Desilting can target the drains that matter, not a fixed schedule.</span>
+            </li>
+            <li>
+                <h3>Flood-safe routes for any trip</h3>
+                <p>A* and Dijkstra over 134,000 road junctions, using the water expected at the time of
+                   travel, through an open API that navigation apps and emergency services can call.</p>
+                <span class="innov-vs">Tested against the real 2015 flood record on zones not used for tuning.</span>
+            </li>
+        </ol>
     </section>
 
     <section class="tech-section" aria-labelledby="engine-title">

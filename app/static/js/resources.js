@@ -197,3 +197,30 @@
         })
         .catch((err) => { count.textContent = `Could not load the wards: ${err.message}`; });
 })();
+
+// How the terrain is mapped: the supplied check points against the terrain model.
+(async () => {
+    const table = document.getElementById("dem-table");
+    if (!table) return;
+    try {
+        const response = await fetch("/data-collection/dem-check");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const d = await response.json();
+        const [low, high] = d.middle_80_m;
+        const values = [d.points_supplied.toLocaleString(), d.points_on_dem.toLocaleString(), `${d.median_gap_m} m`];
+        document.querySelectorAll("#dem-stats dd").forEach((dd, i) => { dd.textContent = values[i]; });
+        document.getElementById("dem-note").textContent =
+            `On every point inside the city grid, the terrain model reads about ${d.median_gap_m} m higher ` +
+            `(8 in 10 points between ${low} and ${high} m). A steady offset like this is the gap between two ` +
+            `height references, not an error in the terrain, and it confirms the model measures height ` +
+            `above mean sea level, as every depth on this site assumes.`;
+        const cell = (text) => { const td = document.createElement("td"); td.textContent = text; return td; };
+        table.tBodies[0].replaceChildren(...d.rows.map((r) => {
+            const tr = document.createElement("tr");
+            tr.append(cell(r[0].toFixed(3)), cell(r[1].toFixed(3)), cell(r[2].toFixed(1)), cell(r[3].toFixed(1)), cell(r[4].toFixed(1)));
+            return tr;
+        }));
+    } catch (err) {
+        document.getElementById("dem-note").textContent = `The elevation check could not be loaded (${err.message}).`;
+    }
+})();

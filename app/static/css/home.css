@@ -1954,3 +1954,45 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     padding: 0; border: 0; background: none; font: inherit; font-size: .82rem;
     color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
+
+/* ─── Innovation (Technology page) ─── */
+.innov-list { list-style: none; margin: 0; padding: 0; counter-reset: innov;
+              display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: .7rem; }
+.innov-list li { counter-increment: innov; position: relative; padding: 1.05rem 1.1rem 1rem 3.2rem;
+                 border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.innov-list li::before { content: counter(innov); position: absolute; left: 1rem; top: 1rem;
+                         width: 1.55rem; height: 1.55rem; border-radius: 6px; display: grid; place-items: center;
+                         background: var(--accent); color: var(--on-accent); font: 600 .78rem var(--mono); }
+.innov-list h3 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+.innov-list p { margin: 0 0 .6rem; font-size: .86rem; line-height: 1.55; color: var(--ink); }
+.innov-vs { display: block; font-size: .78rem; line-height: 1.45; color: var(--muted); }
+
+/* ─── How the terrain is mapped (Resources page) ─── */
+.dem-map { margin-top: 1.4rem; }
+.dem-map .rs-lead { margin-bottom: 1.1rem; }
+.dem-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 1.2rem; align-items: start; }
+.dem-figure { margin: 0; }
+.dem-figure img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #e8eef2; }
+.dem-figure figcaption { display: flex; align-items: center; gap: .6rem; margin-top: .55rem; font-size: .78rem; color: var(--muted); }
+.dem-scale { flex: none; width: 7rem; height: .55rem; border-radius: 4px;
+             background: linear-gradient(90deg, #08306b, #2171b5, #42abc7, #78c679, #d9d666, #e69646, #a66134, #78462d); }
+.dem-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: 0 0 .7rem; }
+.dem-stats div { padding: .65rem .75rem; border: 1px solid var(--line); border-radius: 8px; }
+.dem-stats dt { font-size: .72rem; color: var(--muted); }
+.dem-stats dd { margin: .2rem 0 0; font: 500 1.15rem var(--mono); font-variant-numeric: tabular-nums; }
+.dem-note { margin: 0 0 .8rem; font-size: .84rem; line-height: 1.55; color: var(--muted); }
+.dem-table-wrap { max-height: min(38rem, 70vh); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.dem-table { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.dem-table th { position: sticky; top: 0; background: var(--card); text-align: right; font-weight: 600;
+                padding: .5rem .65rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.dem-table td { text-align: right; padding: .38rem .65rem; border-bottom: 1px solid var(--line); font-family: var(--mono); }
+.dem-table tr:last-child td { border-bottom: 0; }
+.dem-download { display: inline-flex; align-items: center; margin-top: .8rem; text-decoration: none; color: var(--ink); font-size: .85rem; }
+@media (max-width: 52rem) {
+    .dem-grid { grid-template-columns: minmax(0, 1fr); }
+    .dem-stats { gap: .35rem; }
+    .dem-stats div { padding: .5rem .55rem; }
+    .dem-stats dd { font-size: .95rem; }
+    .dem-figure img { max-height: 24rem; object-fit: contain; }
+    .dem-table-wrap { max-height: 19rem; }
+}

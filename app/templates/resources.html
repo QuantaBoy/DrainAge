@@ -108,6 +108,35 @@
         </ol>
     </section>
 
+    <section class="rs-flow dem-map" aria-labelledby="dem-title">
+        <h2 id="dem-title" class="rs-h2">How the terrain is mapped</h2>
+        <p class="rs-lead">Water runs downhill, so the forecast is only as good as its ground heights. The city
+           is a 30 m grid of heights from the GEDTM30 terrain model, corrected to surveyed manhole levels.
+           Its height datum was checked against 1,644 supplied elevation points, shown below.</p>
+        <div class="dem-grid">
+            <figure class="dem-figure">
+                <img src="/data-collection/elevation.png" alt="Shaded ground-height map of Chennai, low ground in blue, high ground in brown" loading="lazy">
+                <figcaption><span class="dem-scale" aria-hidden="true"></span>
+                    <span>Low ground (blue) to high ground (brown), metres above sea level</span></figcaption>
+            </figure>
+            <div class="dem-side">
+                <dl class="dem-stats" id="dem-stats">
+                    <div><dt>Points supplied</dt><dd>–</dd></div>
+                    <div><dt>Inside the city grid</dt><dd>–</dd></div>
+                    <div><dt>Steady offset</dt><dd>–</dd></div>
+                </dl>
+                <p class="dem-note" id="dem-note"></p>
+                <div class="dem-table-wrap">
+                    <table class="dem-table" id="dem-table">
+                        <thead><tr><th>Latitude</th><th>Longitude</th><th>Check point (m)</th><th>Terrain model (m)</th><th>Offset (m)</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <a class="rs-ghost dem-download" href="/data-collection/dem-points.csv" download>Download all 1,644 points (CSV)</a>
+            </div>
+        </div>
+    </section>
+
     <section class="rs-catalogue" aria-labelledby="cat-title">
         <div class="rs-cat-head">
             <h2 id="cat-title" class="rs-h2">Dataset catalogue</h2>
