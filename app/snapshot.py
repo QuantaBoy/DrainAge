@@ -16,6 +16,7 @@ FILES = {
     "/data-collection/streets": "streets.json",
     "/data-collection/waterways": "waterways.json",
     "/data-collection/inventory": "inventory.json",
+    "/data-collection/wards": "wards.json",
 }
 FORECAST_PATH = "/data-collection/rain-ponding/streets"
 # Departure choices in the route panel (static/js/route.js).
@@ -81,11 +82,17 @@ def use_published_routing(base_url: str) -> None:
     compute.street_forecast_gz = no_storm
 
 
+def ward_pdf(number: int) -> str:
+    return f"ward/{number}.pdf"
+
+
 def file_for(path: str, query: dict[str, str]) -> str | None:
     """The saved answer for a request, or None when there is none. A forecast is the
     city-wide one at the nearest offered storm and drain condition."""
     if path in FILES:
         return FILES[path]
+    if path.startswith("/resources/ward-map/") and path.rsplit("/", 1)[1].isdigit():
+        return ward_pdf(int(path.rsplit("/", 1)[1]))
     if path != FORECAST_PATH:
         return None
     try:
@@ -104,4 +111,6 @@ if __name__ == "__main__":
     assert file_for(FORECAST_PATH, {"rain_mm_h": "30", "drain_condition": "0.25"}) == "forecast/30-0.25.json"
     assert file_for(FORECAST_PATH, {"rain_mm_h": "", "zone": "N07"}) == "forecast/live-1.0.json"
     assert file_for("/data-collection/nowcast", {}) is None
+    assert file_for("/resources/ward-map/103", {}) == "ward/103.pdf"
+    assert file_for("/resources/ward-map/x", {}) is None
     print("ok")

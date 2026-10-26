@@ -51,6 +51,15 @@ def main() -> None:
             query = f"?drain_condition={drain}" + (f"&rain_mm_h={rate}" if rate else "")
             jobs[snapshot.forecast_file(rate, drain)] = snapshot.FORECAST_PATH + query
 
+    # The ward base maps (215 MB of PDFs): too big for Vercel, so they are served here.
+    import shutil
+
+    from app.services import wards
+    for number, path in wards.sheet_files().items():
+        target = out / snapshot.ward_pdf(number)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+
     began = time.perf_counter()
     write_route_depths(out)
     print(f"route depths in {time.perf_counter() - began:.0f} s", flush=True)
