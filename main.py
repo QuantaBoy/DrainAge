@@ -20,7 +20,7 @@ os.environ["FORECAST_WORKERS"] = "0"
 os.environ.setdefault("RELOAD", "false")
 # Where GitHub Actions publishes the engine's answers (app/snapshot.py): the model and
 # its data do not fit on Vercel, so its heaviest requests are answered from there.
-STATIC_DATA_URL = os.environ.get("STATIC_DATA_URL", "https://quantaboy.github.io/DrainAge").rstrip("/")
+STATIC_DATA_URL = os.environ.setdefault("STATIC_DATA_URL", "https://quantaboy.github.io/DrainAge").rstrip("/")
 
 # Redirect disk cache to /tmp
 try:
