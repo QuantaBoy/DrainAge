@@ -215,7 +215,7 @@
         index = -1;
         dim.remove(); spot.remove(); card.remove();
         document.body.classList.remove("guide-on");
-        window.shell?.tab("route");
+        window.shell?.tab("alerts");
         returnFocus?.focus?.();
     }
 
