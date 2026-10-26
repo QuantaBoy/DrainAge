@@ -29,6 +29,8 @@ import math
 from typing import Any
 
 import numpy as np
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 from app import config
@@ -107,22 +109,31 @@ def load() -> dict[str, Any]:
                 adjacency[b].append((a, index))
             start = i
 
-    xy = np.asarray(points)
+    # Places snap only onto the main road network: OSM has small islands of road (paths
+    # inside a park or a campus) that join nothing, and a trip snapped onto one of
+    # them has no route at all.
+    ends = np.array([(e["a"], e["b"]) for e in edges])
+    links = coo_matrix((np.ones(len(ends)), (ends[:, 0], ends[:, 1])), shape=(len(points),) * 2)
+    _, label = connected_components(links, directed=False)
+    main = np.flatnonzero(label == np.bincount(label).argmax())
+    xy = np.asarray(points)[main]
     _graph = {
         "points": points,
         "edges": edges,
         "adjacency": adjacency,
         "length": np.array([e["length_m"] for e in edges]),
         "tree": cKDTree(np.c_[xy[:, 0] * M_LON, xy[:, 1] * M_LAT]),
+        "tree_nodes": main,
     }
     return _graph
 
 
 def nearest_node(lat: float, lon: float) -> tuple[int, float]:
-    """The junction closest to a place, and how far off it is, metres."""
+    """The junction on the main road network closest to a place, and how far off it
+    is, metres."""
     graph = load()
     distance, index = graph["tree"].query([lon * M_LON, lat * M_LAT])
-    return int(index), float(distance)
+    return int(graph["tree_nodes"][index]), float(distance)
 
 
 def edge_depths_cm(model: dict[str, Any], depth_grid_m: np.ndarray) -> np.ndarray:
