@@ -1776,7 +1776,7 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
                   background: linear-gradient(180deg, rgba(247, 246, 243, .1) 0%, rgba(247, 246, 243, .25) 55%, var(--bg) 100%); }
 .wm-giant { position: absolute; left: 0; right: 0; bottom: 3.1rem; margin: 0; text-align: center;
             font-family: var(--font); font-weight: 800; font-size: clamp(4rem, 14vw, 11rem); line-height: .8;
-            letter-spacing: -.06em; color: #fff; text-shadow: 0 2px 24px rgba(0, 0, 0, .12); }
+            letter-spacing: -.06em; color: var(--ink); text-shadow: 0 0 28px rgba(247, 246, 243, .95), 0 0 8px rgba(247, 246, 243, .8); }
 .wm-bar { position: absolute; left: 1.2rem; right: 1.2rem; bottom: 0; display: flex; align-items: center; gap: .8rem;
           padding: .8rem 1rem; background: var(--card); border-radius: 12px 12px 0 0; }
 .wm-bar-title { flex: 1; margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: -.01em; }
@@ -1927,4 +1927,30 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     .wm-bar { flex-wrap: wrap; row-gap: .55rem; padding: .75rem .8rem; }
     .wm-search { flex: 1 1 0; min-width: 0; width: auto; }
     .wm-search-go { flex: none; padding: 0 .9rem; }
+}
+
+/* ─── Status card: the answer at the top of Alerts ─── */
+.status-card {
+    margin-bottom: 1.2rem; padding: 1rem 1.05rem 1.05rem;
+    border-radius: var(--radius); border: 1px solid var(--line); background: var(--card);
+    border-left: 4px solid var(--d-stall);
+}
+.status-card.calm { border-left-color: #4E9A6B; }
+.status-card.warn { border-left-color: var(--d-stand); }
+.status-card.bad { border-left-color: var(--d-deep); }
+.status-card h3 { margin: 0 0 .3rem; font-family: var(--serif); font-size: 1.2rem; font-weight: 500; line-height: 1.25; text-wrap: balance; }
+.status-card p { margin: 0; font-size: .85rem; color: var(--muted); line-height: 1.5; max-width: 60ch; }
+.status-actions { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; margin-top: .85rem; }
+.status-cta {
+    padding: .6rem .95rem; border: 0; border-radius: var(--radius-sm);
+    font: inherit; font-size: .85rem; font-weight: 600;
+    background: var(--accent); color: var(--on-accent); cursor: pointer;
+    transition: transform .15s ease, opacity .15s ease;
+}
+.status-cta:hover { opacity: .88; }
+.status-cta:active { transform: translateY(1px); }
+.status-cta:focus-visible, .status-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.status-link {
+    padding: 0; border: 0; background: none; font: inherit; font-size: .82rem;
+    color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }

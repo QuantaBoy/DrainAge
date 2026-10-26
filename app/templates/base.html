@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#0c0f15">
-    <title>{% block title %}SIH26085{% endblock %}</title>
+    <meta name="theme-color" content="#F7F6F3">
+    <title>{% block title %}Chennai Flood Nowcast{% endblock %}</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232F3437%22/%3E%3Cpath d=%22M16 7s7 7.6 7 13a7 7 0 0 1-14 0c0-5.4 7-13 7-13z%22 fill=%22%23fff%22/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,14 +12,14 @@
           href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500&display=swap">
     {% block head %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}?v={{ asset_v }}">
-    <!-- Before first paint, so a remembered palette or theme does not flash the default. -->
+    <!-- Before first paint, so a remembered palette does not flash the default. The site
+         is light only. -->
     <script>
         (() => {
             const root = document.documentElement;
             const stored = (key) => { try { return localStorage.getItem(key); } catch (err) { return null; } };
             root.dataset.palette = stored("palette") || "monsoon";
-            root.dataset.theme = stored("theme") ||
-                (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+            root.dataset.theme = "light";
         })();
     </script>
 </head>
@@ -31,7 +31,7 @@
     <header class="topbar">
         <a class="brand" href="/">
             <span class="brand-mark" aria-hidden="true">◆</span>
-            <span class="brand-name">{% block brand %}SIH26085{% endblock %}</span>
+            <span class="brand-name">{% block brand %}Flood Nowcast{% endblock %}</span>
         </a>
 
         {% set path = request.url.path %}
@@ -43,10 +43,6 @@
 
         {% block controls %}{% endblock %}
 
-        <button id="theme-toggle" class="icon-button" type="button" aria-pressed="false">
-            <span class="theme-icon" aria-hidden="true"></span>
-            <span class="sr-only">Dark theme</span>
-        </button>
 
         <div class="palette" role="group" aria-label="Colour palette">
             <button type="button" data-palette="monsoon" style="--swatch: #3b6ef6"

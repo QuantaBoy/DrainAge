@@ -553,6 +553,7 @@ function drawAlerts() {
     };
 
     pondingUi.alerts.replaceChildren(
+        statusCard(data, named),
         section(`Going under in the next 30 minutes`, soon.map((r) => item(r,
             `in ${r.floods_at_min - nowMin} min`, "soon",
             `peaks ${r.max_depth_cm.toFixed(0)} cm${r.impassable_at_min != null ? " · impassable" : ""}`)),
@@ -562,6 +563,58 @@ function drawAlerts() {
             r.clears_at_min == null ? "still wet at 3 h" : `clears ${whenLabel(r.clears_at_min)}`)),
             "No named street is under water at this time."),
     );
+}
+
+// The answer first: is anything flooding, and how bad. Then the one useful next step.
+function statusCard(data, named) {
+    const live = !pondingUi.rain.value;
+    const span = live ? "in the next 3 hours" : "in this storm";
+    const flooded = named.filter((r) => r.max_depth_cm >= data.thresholds.reported_cm);
+    const card = el("section", "status-card");
+    if (!flooded.length) {
+        card.classList.add("calm");
+        card.append(el("h3", "", `No street flooding expected ${span}`),
+            el("p", "", `${data.rain.total_mm} mm of rain ${live ? "forecast" : "in total"}. ` +
+                "The forecast updates every 30 minutes."));
+    } else {
+        const worst = flooded.reduce((a, b) => (b.max_depth_cm > a.max_depth_cm ? b : a));
+        const impassable = flooded.filter((r) => r.max_depth_cm >= data.thresholds.impassable_cm).length;
+        card.classList.add(impassable ? "bad" : "warn");
+        // The top bar counts the streets wet at the selected moment; this counts every
+        // street that floods at some point, so the two are worded apart.
+        const n = (v) => v.toLocaleString();
+        const now = data.per_step[pondingState.step].wet;
+        card.append(el("h3", "", `${n(flooded.length)} street${flooded.length === 1 ? "" : "s"} flood ${span}`),
+            el("p", "", `${n(now)} under water at ${clockAt(pondingState.step) || "this moment"}. ` +
+                `${impassable ? `${n(impassable)} get too deep to drive through. ` : ""}` +
+                `Deepest: ${worst.street}, ${worst.max_depth_cm.toFixed(0)} cm.`));
+    }
+    const actions = el("div", "status-actions");
+    if (live && !flooded.length) {
+        const tryStorm = el("button", "status-cta", "See what a 60 mm/h storm would do");
+        tryStorm.type = "button";
+        tryStorm.addEventListener("click", () => {
+            pondingUi.rain.value = "60";
+            pondingUi.rain.dispatchEvent(new Event("change"));
+        });
+        actions.append(tryStorm);
+    } else if (!live) {
+        const back = el("button", "status-cta", "Back to the live forecast");
+        back.type = "button";
+        back.addEventListener("click", () => {
+            pondingUi.rain.value = "";
+            pondingUi.rain.dispatchEvent(new Event("change"));
+        });
+        actions.append(back);
+    }
+    if (window.guide && !window.guide.seen()) {
+        const tour = el("button", "status-link", "New here? Take the 1-minute tour");
+        tour.type = "button";
+        tour.addEventListener("click", () => window.guide.open());
+        actions.append(tour);
+    }
+    if (actions.childElementCount) card.append(actions);
+    return card;
 }
 
 // ─── Fetch ─────────────────────────────────────────────────────────────────────

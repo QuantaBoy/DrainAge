@@ -239,8 +239,7 @@
     window.addEventListener("resize", place);
 
     document.getElementById("guide-open")?.addEventListener("click", open);
-    // First visit: open once the page has drawn, so the spotlight lands on real layout.
-    if (!seen()) window.addEventListener("load", () => setTimeout(open, 600));
-
-    window.guide = { open };
+    // The tour never opens by itself: the forecast comes first. A first-time visitor is
+    // offered it in the summary at the top of Alerts (ponding.js).
+    window.guide = { open, seen };
 })();
