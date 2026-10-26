@@ -28,3 +28,6 @@ app/data/*
 # Built by scripts/build_frontend.py for Vercel.
 web/
 tunnel.log
+
+.vercel
+.env*
