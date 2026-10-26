@@ -10,6 +10,8 @@ scipy==1.18.1
 # Rain ponding: depression fill (reconstruction) and catchments (watershed).
 scikit-image==0.26.0
 tifffile==2026.8.23
+# The DEM tiles are LZW and floating-point-predictor DEFLATE: tifffile needs this to read them.
+imagecodecs==2026.8.16
 pillow==12.3.0
 # The Technology page: the device's cores and memory; pausing the refresh when busy.
 psutil==7.2.2
