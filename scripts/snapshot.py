@@ -42,6 +42,12 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(response.content)
         print(f"{name}: {len(response.content) / 2**20:.1f} MB in {time.perf_counter() - began:.0f} s", flush=True)
+    # Someone opening the data address directly gets pointed at the website.
+    (out / "index.html").write_text(
+        '<!doctype html><meta charset="utf-8"><title>Flood forecast data</title>'
+        '<p>Data files for the Chennai street-level flood forecast, updated every 30 minutes. '
+        'The website: <a href="https://street-level-flood-forecasting.vercel.app">'
+        'street-level-flood-forecasting.vercel.app</a></p>', encoding="utf-8")
     # A failed run publishes nothing, so the site keeps the last good answers.
     if failed:
         sys.exit(f"{len(failed)} of {len(jobs)} answers failed")
