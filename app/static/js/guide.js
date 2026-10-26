@@ -92,7 +92,7 @@
         {
             target: '#tabs [data-tab="more"]',
             before: tab("more"),
-            title: "More: weather and drains",
+            title: "Overview: weather and drains",
             text: "Current weather and the 7-day rain forecast, and the storm water drain " +
                   "network: switch it on to see which drains are overloaded, by zone or ward.",
         },
@@ -215,7 +215,7 @@
         index = -1;
         dim.remove(); spot.remove(); card.remove();
         document.body.classList.remove("guide-on");
-        window.shell?.tab("alerts");
+        window.shell?.tab("more");
         returnFocus?.focus?.();
     }
 

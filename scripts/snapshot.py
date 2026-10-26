@@ -45,7 +45,7 @@ def main() -> None:
     parser.add_argument("--out", required=True, type=Path)
     out = parser.parse_args().out
 
-    jobs = {name: path for path, name in snapshot.FILES.items()}
+    jobs = {name: path for path, name in {**snapshot.FILES, **snapshot.UNFILTERED}.items()}
     for rate in (None, *snapshot.PRESET_RATES_MM_H):
         for drain in snapshot.DRAIN_LEVELS:
             query = f"?drain_condition={drain}" + (f"&rain_mm_h={rate}" if rate else "")

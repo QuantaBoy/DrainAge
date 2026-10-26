@@ -18,6 +18,8 @@ FILES = {
     "/data-collection/inventory": "inventory.json",
     "/data-collection/wards": "wards.json",
 }
+# Saved only unfiltered: a request with a zone, ward or type filter still runs on Vercel.
+UNFILTERED = {"/data-collection/drains": "drains.json"}
 FORECAST_PATH = "/data-collection/rain-ponding/streets"
 # Departure choices in the route panel (static/js/route.js).
 LEAVE_MIN = (0, 30, 60, 90, 120, 150)
@@ -91,6 +93,8 @@ def file_for(path: str, query: dict[str, str]) -> str | None:
     city-wide one at the nearest offered storm and drain condition."""
     if path in FILES:
         return FILES[path]
+    if path in UNFILTERED and not query:
+        return UNFILTERED[path]
     if path.startswith("/resources/ward-map/") and path.rsplit("/", 1)[1].isdigit():
         return ward_pdf(int(path.rsplit("/", 1)[1]))
     if path != FORECAST_PATH:
@@ -113,4 +117,6 @@ if __name__ == "__main__":
     assert file_for("/data-collection/nowcast", {}) is None
     assert file_for("/resources/ward-map/103", {}) == "ward/103.pdf"
     assert file_for("/resources/ward-map/x", {}) is None
+    assert file_for("/data-collection/drains", {}) == "drains.json"
+    assert file_for("/data-collection/drains", {"zone": "N07"}) is None
     print("ok")
