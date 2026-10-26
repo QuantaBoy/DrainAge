@@ -18,6 +18,28 @@ from app import snapshot  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+def write_route_depths(out: Path) -> None:
+    """The road depths the route search reads, for every offered storm, drain condition
+    and departure (app/snapshot.route_file)."""
+    import asyncio
+
+    import numpy as np
+
+    from app import config
+    from app.services import forecast, hydraulics, navigation, rainfall
+
+    lat, lon = config.CHENNAI_CENTRE
+    for rate in (None, *snapshot.PRESET_RATES_MM_H):
+        rain = asyncio.run(rainfall.report_steps(round(lat, 4), round(lon, 4), rate))
+        for drain in snapshot.DRAIN_LEVELS:
+            for leave in snapshot.LEAVE_MIN:
+                first, last = navigation.trip_steps(leave, rain)
+                depth = forecast.road_depths_cm(rain, hydraulics.RUNOFF_COEFF, drain, first, last)
+                target = out / snapshot.route_file(rate, drain, leave)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(np.clip(np.rint(depth), 0, 255).astype(np.uint8).tobytes())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path)
@@ -28,6 +50,10 @@ def main() -> None:
         for drain in snapshot.DRAIN_LEVELS:
             query = f"?drain_condition={drain}" + (f"&rain_mm_h={rate}" if rate else "")
             jobs[snapshot.forecast_file(rate, drain)] = snapshot.FORECAST_PATH + query
+
+    began = time.perf_counter()
+    write_route_depths(out)
+    print(f"route depths in {time.perf_counter() - began:.0f} s", flush=True)
 
     client = TestClient(app)          # no lifespan: nothing is computed ahead
     failed = []

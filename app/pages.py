@@ -1,6 +1,5 @@
 """The two HTML pages: the dashboard and the ward resources."""
 
-import os
 import time
 
 from fastapi import APIRouter, Request
@@ -14,8 +13,6 @@ templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 # Stamped onto every script and stylesheet URL, so a browser never runs yesterday's
 # JavaScript against today's page after a restart.
 templates.env.globals["asset_v"] = str(int(time.time()))
-# Served from precomputed answers (Vercel, main.py): no live engine, so no safe routing.
-templates.env.globals["static_site"] = bool(os.environ.get("STATIC_DATA_URL"))
 
 
 @router.get("/", response_class=HTMLResponse)

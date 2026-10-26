@@ -41,6 +41,8 @@ fastapi_app = None
 try:
     from app.main import app as _base_app
     fastapi_app = _base_app
+    from app import snapshot as _snapshot
+    _snapshot.use_published_routing(STATIC_DATA_URL)
     from fastapi import Request
     from fastapi.responses import FileResponse, JSONResponse
     from app.pages import home
@@ -165,13 +167,6 @@ async def app(scope, receive, send):
                         "headers": [(b"location", f"{STATIC_DATA_URL}/{name}".encode()),
                                     (b"cache-control", b"public, max-age=60")]})
             await send({"type": "http.response.body", "body": b""})
-            return
-        if scope["path"] == "/data-collection/route":
-            body = (b'{"detail":"Safe routing needs the live flood engine, which this free site does '
-                    b'not run. The flood map and forecasts on this site are updated every 30 minutes."}')
-            await send({"type": "http.response.start", "status": 503,
-                        "headers": [(b"content-type", b"application/json")]})
-            await send({"type": "http.response.body", "body": body})
             return
 
     try:

@@ -4,11 +4,14 @@
 
 - **GitHub Actions** (`.github/workflows/snapshot.yml`) runs the flood engine every 30
   minutes and publishes its answers on **GitHub Pages** (https://quantaboy.github.io/DrainAge):
-  the live forecast and every what-if storm, the elevation layer, streets and waterways.
+  the live forecast and every what-if storm, the elevation layer, streets and waterways,
+  and the water depth on every road for each storm, drain condition and departure time.
 - **Vercel** (`vercel.json`, `main.py`) serves the pages and the light requests (rain,
-  weather, geocoding, drains) and sends the heavy ones to GitHub Pages (`app/snapshot.py`).
+  weather, geocoding, drains), runs the safe-route search on the published road depths,
+  and sends the heavy requests to GitHub Pages (`app/snapshot.py`).
 - Limits: the forecast is up to 30 minutes old; it is city-wide at the city centre's
-  rain (zone, ward and a picked place do not change it); safe routing is off.
+  rain (zone, ward and a picked place do not change it). The first route after a quiet
+  spell takes a few seconds while Vercel loads the street graph.
 - Redeploy Vercel after code changes: `npx vercel deploy --prod --yes` from the repo root.
 
 The sections below are the older setups, with a live engine.

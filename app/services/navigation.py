@@ -101,6 +101,14 @@ def _minutes(route: dict[str, Any] | None) -> None:
         route["minutes"] = round(route["length_km"] / AVERAGE_SPEED_KMH * 60)
 
 
+def trip_steps(leave_in_min: int, rain: dict[str, Any]) -> tuple[int, int]:
+    """The forecast steps a trip leaving in `leave_in_min` minutes spends on the road."""
+    step_min = rain["step_minutes"]
+    steps = len(rain["rain_mm_h"])
+    first = min(max(leave_in_min // step_min - 1, 0), steps - 1)
+    return first, min(first + TRIP_WINDOW_MIN // step_min, steps - 1)
+
+
 def plan_route(start: tuple[float, float], end: tuple[float, float], leave_in_min: int,
                rain: dict[str, Any], runoff_coeff: float, drain_condition: float,
                algorithm: str) -> dict[str, Any]:
@@ -113,9 +121,7 @@ def plan_route(start: tuple[float, float], end: tuple[float, float], leave_in_mi
     target, target_off = snap(*end, "destination")
 
     step_min = rain["step_minutes"]
-    steps = len(rain["rain_mm_h"])
-    first = min(max(leave_in_min // step_min - 1, 0), steps - 1)
-    last = min(first + TRIP_WINDOW_MIN // step_min, steps - 1)
+    first, last = trip_steps(leave_in_min, rain)
     depth = forecast.road_depths_cm(rain, runoff_coeff, drain_condition, first, last)
 
     safe_cost = routing.weights(depth)

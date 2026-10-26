@@ -215,8 +215,7 @@
         index = -1;
         dim.remove(); spot.remove(); card.remove();
         document.body.classList.remove("guide-on");
-        // The free site has no Route tab (no live engine): it opens on Alerts.
-        window.shell?.tab(document.querySelector('#tabs [data-tab="route"]').hidden ? "alerts" : "route");
+        window.shell?.tab("route");
         returnFocus?.focus?.();
     }
 
