@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500&display=swap">
+          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500&family=Noto+Sans+Tamil:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap">
     {% block head %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/home.css') }}?v={{ asset_v }}">
     <!-- Before first paint, so a remembered palette does not flash the default. The site
@@ -43,6 +43,14 @@
 
         {% block controls %}{% endblock %}
 
+        <label class="lang-select">
+            <span class="sr-only">Language</span>
+            <select id="lang" aria-label="Language">
+                <option value="en">English</option>
+                <option value="ta" lang="ta">தமிழ்</option>
+                <option value="hi" lang="hi">हिन्दी</option>
+            </select>
+        </label>
 
         <div class="palette" role="group" aria-label="Colour palette">
             <button type="button" data-palette="monsoon" style="--swatch: #3b6ef6"
@@ -60,5 +68,6 @@
 
 {% block scripts %}{% endblock %}
 <script src="{{ url_for('static', path='js/theme.js') }}?v={{ asset_v }}"></script>
+<script src="{{ url_for('static', path='js/i18n.js') }}?v={{ asset_v }}"></script>
 </body>
 </html>

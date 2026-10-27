@@ -1263,9 +1263,9 @@ body.map-page { padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }
     --radius-sm: 8px;
     --shadow: 0 1px 2px rgba(0, 0, 0, .03);
     --drop: #3F7FB0;
-    --font: "Geist", "Helvetica Neue", system-ui, sans-serif;
+    --font: "Geist", "Noto Sans Tamil", "Noto Sans Devanagari", "Helvetica Neue", system-ui, sans-serif;
     --mono: "Geist Mono", "SF Mono", ui-monospace, monospace;
-    --serif: "Newsreader", Georgia, serif;
+    --serif: "Newsreader", "Noto Sans Tamil", "Noto Sans Devanagari", Georgia, serif;
 }
 :root[data-theme=dark], :root[data-theme=dark][data-palette] {
     --bg: #191919;
@@ -1996,3 +1996,14 @@ select, .sheet .drain-label select { font-weight: 500 !important; }
     .dem-figure img { max-height: 24rem; object-fit: contain; }
     .dem-table-wrap { max-height: 19rem; }
 }
+
+/* ─── Language switch ─── */
+.lang-select select {
+    height: 2.3rem; padding: 0 1.9rem 0 .7rem; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer;
+}
+.lang-select select:hover { background: var(--accent-soft); }
+.lang-select select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lang-select { flex: none; }
+/* Tamil and Hindi run longer than English: let labels wrap rather than clip. */
+:root:not([lang=en]) .tabs [role=tab] span:last-child { white-space: normal; text-align: center; line-height: 1.15; }
