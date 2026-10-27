@@ -1,8 +1,10 @@
 """The rain the flood model runs on: the next three hours, in 5 minute steps.
 
-Open-Meteo's 15 minute product is the stand-in for a Doppler radar nowcast: it is free,
-global and updates hourly. A DWR feed would replace `nowcast` and nothing else, since
-everything downstream takes millimetres per hour on a clock.
+Live rain comes from our own ConvLSTM nowcast (app/services/rain_model.py, trained by
+ml/train.py on Chennai's past monsoons, flood years included) when its weights are
+present, and from Open-Meteo's 15 minute product otherwise. A DWR feed would replace
+the model's input and nothing else, since everything downstream takes millimetres per
+hour on a clock.
 """
 
 import time
@@ -13,6 +15,7 @@ import httpx
 
 from app import config
 from app.errors import UpstreamError
+from app.services import rain_model
 from app.services.weather import local_current_step
 
 NOWCAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -80,6 +83,26 @@ async def _fetch_nowcast(lat: float, lon: float) -> dict[str, Any]:
     }
 
 
+_model_runs: dict[tuple[float, float], tuple[float, dict[str, Any] | None]] = {}
+
+
+async def model_nowcast(lat: float, lon: float) -> dict[str, Any] | None:
+    """The ConvLSTM's next 3 hours near a place, or None without weights or input, so
+    the caller falls back to the Open-Meteo product. Kept for NOWCAST_TTL_S per grid cell."""
+    if not rain_model.available():
+        return None
+    cell = (round(lat * 4) / 4, round(lon * 4) / 4)
+    hit = _model_runs.get(cell)
+    if hit and time.monotonic() - hit[0] < NOWCAST_TTL_S:
+        return hit[1]
+    try:
+        answer = await rain_model.nowcast(lat, lon)
+    except (httpx.HTTPError, KeyError, ValueError, IndexError):
+        answer = None
+    _model_runs[cell] = (time.monotonic(), answer)
+    return answer
+
+
 async def report_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[str, Any]:
     """Rain in each 5 minute step of the next 3 hours, and the clock time each step ends.
 
@@ -100,15 +123,24 @@ async def report_steps(lat: float, lon: float, rain_mm_h: float | None) -> dict[
         moved = not config.in_chennai(lat, lon)
         if moved:
             lat, lon = config.CHENNAI_CENTRE
-        live = await nowcast(lat, lon)
-        rates = [rate for rate in live["rain_mm_h"] for _ in range(per)][:REPORT_STEPS]
+        predicted = await model_nowcast(lat, lon)
+        if predicted:
+            # The model's hourly rates, spread evenly over each hour's 5 minute steps.
+            hourly_steps = 60 // step
+            rates = [rate for rate in predicted["rain_mm_h"] for _ in range(hourly_steps)][:REPORT_STEPS]
+            start = datetime.fromisoformat(predicted["hours"][0]) - timedelta(hours=1)
+            source = (f"ConvLSTM rain nowcast (ensemble of {len(rain_model._load())}, trained on Chennai's "
+                      f"monsoons 2005-2025) from the last {rain_model.IN_H} h of rain")
+        else:
+            live = await nowcast(lat, lon)
+            rates = [rate for rate in live["rain_mm_h"] for _ in range(per)][:REPORT_STEPS]
+            start = datetime.fromisoformat(live["starts_at"])
+            source = f"{live['source']} at {lat:.3f}, {lon:.3f}"
         rates += [0.0] * (REPORT_STEPS - len(rates))
-        start = datetime.fromisoformat(live["starts_at"])
         ends = [(start + timedelta(minutes=step * (i + 1))).isoformat(timespec="minutes")
                 for i in range(REPORT_STEPS)]
-        source = (f"{live['source']} at {lat:.3f}, {lon:.3f}"
-                  f"{' (city centre: the place asked about is outside Chennai)' if moved else ''}, "
-                  f"next {config.NOWCAST_HOURS} h")
+        source += (f"{' (city centre: the place asked about is outside Chennai)' if moved else ''}, "
+                   f"next {config.NOWCAST_HOURS} h")
     return {
         # A scenario is never passed off as a forecast: every response says which it is.
         "mode": "scenario" if rain_mm_h is not None else "live",

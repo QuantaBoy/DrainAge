@@ -53,6 +53,37 @@
         </ol>
     </section>
 
+    <section class="tech-section model" aria-labelledby="model-title">
+        <div class="tech-title-row">
+            <h2 id="model-title">Model prediction</h2>
+            <span class="tech-live" id="model-live">Loading the model…</span>
+        </div>
+        <p class="tech-lead" id="model-lead">Five rain-forecasting models were trained on Chennai's past monsoons and
+           scored on flood seasons they never saw. The best one forecasts the next 3 hours of rain, and that
+           forecast drives the live flood simulation.</p>
+
+        <div class="model-now" id="model-now" aria-live="polite"></div>
+
+        <h3 class="model-h3">How the models compare</h3>
+        <p class="model-note" id="model-test-note"></p>
+        <div class="tech-table-wrap">
+            <table class="tech-table model-table" id="model-table">
+                <thead><tr><th>Model</th><th>Rain error<br><small>mm/h, lower is better</small></th>
+                    <th>City 3-hour rain error<br><small>mm, lower is better</small></th>
+                    <th>Rain caught ≥ 0.5 mm/h<br><small>CSI, higher is better</small></th>
+                    <th>Heavy rain caught ≥ 2 mm/h<br><small>CSI, higher is better</small></th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <h3 class="model-h3">Cyclone Michaung, December 2023: rain 3 hours ahead at Chennai</h3>
+        <p class="model-note">A flood the models were never trained on. Each line is a model's forecast, made 3 hours
+           before, against the rain that fell.</p>
+        <div class="model-legend" id="model-legend"></div>
+        <div class="model-chart" id="model-chart" role="img" aria-label="Line chart of observed rain and model forecasts during Cyclone Michaung"></div>
+        <p class="model-note" id="model-data-note"></p>
+    </section>
+
     <section class="tech-section" aria-labelledby="engine-title">
         <div class="tech-title-row">
             <h2 id="engine-title">Forecast engine</h2>

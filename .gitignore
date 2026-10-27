@@ -15,6 +15,8 @@ app/data/*
 !app/data/validation.json
 # The DEM cross-check table shown on the Resources page (scripts/make_dem_check.py).
 !app/data/dem_check.json
+!app/data/rain_model.npz
+!app/data/rain_models.json
 # The terrain and the OSM streets and waterways: GitHub Actions builds the model from them.
 !app/data/*.tif
 !app/data/dem/

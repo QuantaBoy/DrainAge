@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
 from app import config
-from app.services import compute, history, inventory
+from app.services import compute, history, inventory, rain_model, rainfall
 
 router = APIRouter(prefix="/data-collection", tags=["System"])
 
@@ -36,3 +36,9 @@ async def get_dem_check() -> dict[str, Any]:
 async def get_dem_points() -> FileResponse:
     return FileResponse(config.SURVEY_DIR / "dem_points (1).csv", media_type="text/csv",
                         filename="chennai_dem_points.csv")
+
+
+@router.get("/rain-model", summary="The rain nowcast models compared, and the chosen one's live forecast")
+async def get_rain_model() -> dict[str, Any]:
+    lat, lon = config.CHENNAI_CENTRE
+    return {"report": rain_model.report(), "live": await rainfall.model_nowcast(lat, lon)}
