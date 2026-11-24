@@ -40,8 +40,8 @@ jobs:
           key: model-${{ hashFiles('app/data/*.tif', 'app/data/dem/**', 'app/data/*.geojson', 'app/data/*.npz', 'Cross-Checked Data/**', 'Historical Flood/**', 'app/services/**') }}
           restore-keys: model-
       - run: python scripts/snapshot.py --out site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
